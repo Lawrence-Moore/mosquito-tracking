@@ -9,7 +9,7 @@ chance = rand();
 
 if (chance <= same_direction_chance)
     % generate an angle within 30 degrees of the original direction
-    angle = -1 * pi / 12 + rand() * pi / 12;
+    angle = -1 * pi / 12 + rand() * pi / 6;
 
 elseif (chance <= 1.0 - no_move_chance)
     % generate an angle between 15 and 165
@@ -22,7 +22,7 @@ end
 newTraj = [cos(angle) * oldTraj(1) - sin(angle) * oldTraj(2),...
            sin(angle) * oldTraj(1) + cos(angle) * oldTraj(2)];
 
-newTraj = newTraj/ sum(newTraj) * moveSize;
+newTraj = newTraj/ sum(abs(newTraj)) * moveSize;
 
 % check bounds. if out, reverse direction
 newPosition = round(oldPosition  + newTraj);

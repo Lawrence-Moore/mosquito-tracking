@@ -1,4 +1,4 @@
-function generate_mosquito_data(image, num_seconds, frames_per_movement, pixelSize, moveSize)
+function [locations] = generate_mosquito_data(image, num_seconds, frames_per_movement, pixelSize, moveSize)
                             
 %                             video_path, new_video_name, num_seconds, mosquito_size, ...
 %                                 mosquito_distance, mosquito_speed, frames_per_movement
@@ -12,6 +12,10 @@ function generate_mosquito_data(image, num_seconds, frames_per_movement, pixelSi
 % frames_per_movement - dictates at what rate the mosquito will move in
 % video time
 
+% example usage: 
+%   image = imread('room.jpg');
+%   generate_mosquito_data(image, 10, 3, 10, 5);
+
 framerate = 5;
 writerObj = VideoWriter('myVideo.avi');
 writerObj.FrameRate = framerate;
@@ -20,12 +24,12 @@ writerObj.FrameRate = framerate;
  open(writerObj);
  
  traj = rand([1,2]);
- oldPosition = round(rand([1,2]) .* [size(image, 1), size(image, 2)]);
+ position = round(rand([1,2]) .* [size(image, 1), size(image, 2)]);
  grids = [];
  % write the frames to the video
  for i = 1: frames_per_movement: (num_seconds * framerate)
-     [newPosition, traj] = generateMovement(oldPosition, traj, moveSize, size(image));
-     [grid, blendedImage] = insertMosquito(image, newPosition, pixelSize);
+     [position, traj] = generateMovement(position, traj, moveSize, size(image));
+     [grid, blendedImage] = insertMosquito(image, position, pixelSize);
      grids = cat(4, grids, grid);
      % convert the image to a frame
      frame = im2frame(blendedImage);
@@ -36,5 +40,6 @@ writerObj.FrameRate = framerate;
  end
  % close the writer object
  close(writerObj);
-
+ locations = grids;
+ save('locations.mat', 'locations');
 end
