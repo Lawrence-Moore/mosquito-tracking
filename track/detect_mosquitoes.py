@@ -7,6 +7,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 import load_data
 import simple_feed_forward
+import multi_frame_network
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -21,29 +22,44 @@ def train():
     """Eval CIFAR-10 for a number of steps."""
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
+        net_type = 'multi-frame'
+        new_shape = (1008, 1008, 3)
+        if net_type == 'simple':
+            # Get images and labels for the skeets
+            images_np, labels_np = load_data.load_single_frame(new_shape)
+            images = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
+            labels = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
 
-        # Get images and labels for the skeets
-        images_np, labels_np = load_data.load()
-        print images_np.shape, labels_np.shape
-        images = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
-        labels = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
+            # Build a Graph that computes the logits predictions from the
+            # inference model.
+            net = simple_feed_forward.SimpleNet()
+            logits = net.inference(images)
 
-        # images = tf.placeholder(tf.float32)
-        # labels = tf.placeholder(tf.float32)
+            # Calculate loss.
+            loss = net.loss(logits, labels)
 
-        # Build a Graph that computes the logits predictions from the
-        # inference model.
-        logits = simple_feed_forward.inference(images)
+            # Build a Graph that trains the model with one batch of examples and
+            # updates the model parameters.
+            train_op = net.train(loss, global_step)
+        elif net_type == 'multi-frame':
+            # Get images and labels for the skeets
+            frame_depth = 10
+            images_np, labels_np = load_data.load_multi_frame(frame_depth, new_shape)
+            images = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3], images_np.shape[4]])
+            labels = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3], images_np.shape[4]])
 
+            # Build a Graph that computes the logits predictions from the
+            # inference model.
+            net = multi_frame_network.MultiframeNet()
+            print "shapes", images.get_shape(), tf.shape(images)
+            logits = net.inference(images, frame_depth)
 
-        return
+            # Calculate loss.
+            loss = net.loss(logits, labels)
 
-        # Calculate loss.
-        loss = simple_feed_forward.loss(logits, labels)
-
-        # Build a Graph that trains the model with one batch of examples and
-        # updates the model parameters.
-        train_op = simple_feed_forward.train(loss, global_step)
+            # Build a Graph that trains the model with one batch of examples and
+            # updates the model parameters.
+            train_op = net.train(loss, global_step)
 
         # Create a saver.
         saver = tf.train.Saver(tf.all_variables())
@@ -52,6 +68,7 @@ def train():
         summary_op = tf.merge_all_summaries()
 
         # Build an initialization operation to run below.
+        print "initializing all variables"
         init = tf.initialize_all_variables()
 
         # Start running operations on the Graph.
@@ -64,31 +81,34 @@ def train():
 
         summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
 
+        print "create the summar writter and begin training"
+
         for step in xrange(FLAGS.max_steps):
             start_time = time.time()
             _, loss_value = sess.run([train_op, loss], feed_dict={images: images_np, labels: labels_np})
             duration = time.time() - start_time
 
-        assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+            print "got here"
+            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
-        if step % 10 == 0:
-            num_examples_per_step = FLAGS.batch_size
-            examples_per_sec = num_examples_per_step / duration
-            sec_per_batch = float(duration)
+            if step % 10 == 0:
+                num_examples_per_step = FLAGS.batch_size
+                examples_per_sec = num_examples_per_step / duration
+                sec_per_batch = float(duration)
 
-        format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                      'sec/batch)')
-        print (format_str % (datetime.now(), step, loss_value,
-                             examples_per_sec, sec_per_batch))
+            format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
+                          'sec/batch)')
+            print (format_str % (datetime.now(), step, loss_value,
+                                 examples_per_sec, sec_per_batch))
 
-        if step % 100 == 0:
-            summary_str = sess.run(summary_op)
-            summary_writer.add_summary(summary_str, step)
+            if step % 100 == 0:
+                summary_str = sess.run(summary_op, feed_dict={images: images_np, labels: labels_np})
+                summary_writer.add_summary(summary_str, step)
 
-        # Save the model checkpoint periodically.
-        if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
-            checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-            saver.save(sess, checkpoint_path, global_step=step)
+            # Save the model checkpoint periodically.
+            if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
+                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                saver.save(sess, checkpoint_path, global_step=step)
 
 
 def main(argv=None):

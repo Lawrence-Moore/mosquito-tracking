@@ -12,6 +12,10 @@ from tensorflow.python.ops import rnn, rnn_cell
 FLAGS = tf.app.flags.FLAGS
 
 # Basic model parameters.
+tf.app.flags.DEFINE_integer('batch_size', 128,
+                            """Number of images to process in a batch.""")
+tf.app.flags.DEFINE_boolean('use_fp16', False,
+                            """Train the model using fp16.""")
 
 MOVING_AVERAGE_DECAY = 0.9999
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 50000
@@ -23,39 +27,12 @@ learning_rate = 0.001
 training_iters = 100000
 
 
-class MultiframeNet:
-
-    def inference(self, images, frame_depth, train=False, debug=False):
-        # [batch, in_depth, in_height, in_width, in_channels]
-        print images.get_shape()
-        self.conv1 = self._conv_layer(images, "conv1", [frame_depth, 5, 5, 3, 32], [1, 2, 2, 2, 1])
-        self.pool1 = self._max_pool(self.conv1, 'pool1', 5, 2)
-
-        self.conv2 = self._conv_layer(self.pool1, "conv2", [frame_depth, 5, 5, 32, 32], [1, 2, 2, 2, 1])
-        self.pool2 = self._max_pool(self.conv2, 'pool2', 5, 2)
-
-        self.conv3 = self._conv_layer(self.pool2, "conv3", [frame_depth, 5, 5, 32, 32])
-        self.pool3 = self._max_pool(self.conv3, 'pool3', 5, 1)
-
-        self.conv4 = self._conv_layer(self.pool3, "conv4", [frame_depth, 5, 5, 32, 32])
-        self.pool4 = self._max_pool(self.conv4, 'pool4', 5, 1)
-
-        self.conv5 = self._conv_layer(self.pool4, "conv5",  [frame_depth, 17, 17, 32, 32])
-        self.pool5 = self._max_pool(self.conv5, 'pool5', 17, 1)
 
 
-        self.fc1 = self._conv_layer(self.pool4, "fc1", [frame_depth, 1, 1, 32, 64])
-        self.fc2 = self._conv_layer(self.fc1, "fc2", [frame_depth, 1, 1, 64, 64])
+def _max_pool(bottom, name, ksize, stride):
+    return tf.nn.max_pool(bottom, ksize=[1, ksize, ksize, 1], strides=[1, stride, stride, 1], padding='SAME', name=name)
 
-        self.heatmap = self.deconv(self.fc2, "deconv", frame_depth)
-
-        return tf.cast(self.heatmap, tf.float32)
-
-    def _max_pool(self, bottom, name, ksize, stride):
-    	# consider the source
-        return tf.nn.max_pool3d(bottom, ksize=[1, ksize, ksize, ksize, 1], strides=[1, stride, stride, stride, 1], padding='SAME', name=name)
-
-    def _conv_layer(self, bottom, name, shape, strides=[1, 1, 1, 1, 1]):
+    def _conv_layer(self, bottom, name, shape, strides=[1, 1, 1, 1]):
         with tf.variable_scope(name) as scope:
 
             # get the weights and biases
@@ -65,11 +42,11 @@ class MultiframeNet:
                                  initializer=tf.truncated_normal_initializer(stddev=5e-2, dtype=tf.float32))
 
             biases = tf.get_variable(name + "_biases",
-                                 shape=shape[4],
+                                 shape=shape[3],
                                  dtype=tf.float32, 
                                  initializer=tf.constant_initializer(0.0))
 
-            conv = tf.nn.conv3d(bottom, kernel, strides, padding='SAME')
+            conv = tf.nn.conv2d(bottom, kernel, strides, padding='SAME')
 
             bias = tf.nn.bias_add(conv, biases)
 
@@ -78,21 +55,33 @@ class MultiframeNet:
             self._activation_summary(relu)
             return relu
 
-    def deconv(self, input, name, frame_depth, stride=16, ksize=4):
-        with tf.variable_scope(name):
 
-            kernel = tf.get_variable(name + "_weights",
-                                     shape=[frame_depth, ksize, ksize, 3, 64],
-                                     dtype=tf.float32, 
-                                     initializer=tf.truncated_normal_initializer(stddev=5e-2, dtype=tf.float32))
-            output_shape = input.get_shape().as_list()
-            output_shape[2] *= stride
-            output_shape[3] *= stride
-            output_shape[4] = kernel.get_shape().as_list()[3]
+    def _variable_with_weight_decay(self, shape, stddev, wd):
+        """Helper to create an initialized Variable with weight decay.
 
-            output_shape = tf.pack([tf.shape(input)[0], output_shape[1], output_shape[2], output_shape[3], output_shape[4]])
-            return tf.nn.conv3d_transpose(self.fc2, kernel, output_shape, [1, stride, stride, stride, 1], padding='VALID')
+        Note that the Variable is initialized with a truncated normal
+        distribution.
+        A weight decay is added only if one is specified.
 
+        Args:
+          name: name of the variable
+          shape: list of ints
+          stddev: standard deviation of a truncated Gaussian
+          wd: add L2Loss weight decay multiplied by this float. If None, weight
+              decay is not added for this Variable.
+
+        Returns:
+          Variable Tensor
+        """
+
+        initializer = tf.truncated_normal_initializer(stddev=stddev)
+        var = tf.get_variable('weights', shape=shape,
+                              initializer=initializer)
+
+        if wd and (not tf.get_variable_scope().reuse):
+            weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
+            tf.add_to_collection('losses', weight_decay)
+        return var
 
     def _bias_variable(self, shape, constant=0.0):
         initializer = tf.constant_initializer(constant)
@@ -165,8 +154,94 @@ class MultiframeNet:
 
 
     def _activation_summary(self, x):
+        """Helper to create summaries for activations.
+
+        Creates a summary that provides a histogram of activations.
+        Creates a summary that measure the sparsity of activations.
+
+        Args:
+          x: Tensor
+        Returns:
+          nothing
+        """
+        # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+        # session. This helps the clarity of presentation on tensorboard.
         tensor_name = x.op.name
         # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
         tf.histogram_summary(tensor_name + '/activations', x)
         tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
+
+
+class RNNCell:
+
+    def __init__(images, num_cells, num_steps, weights, batch_size):
+        lstm_cell = rnn_cell.BasicLSTMCell(n_hidden, forget_bias=1.0)
+        self.initial_state = cell.zero_state(batch_size, tf.float32)
+
+        outputs = []
+        state = self.initial_state
+        with tf.variable_scope("RNN"):
+            for time_step in range(num_steps):
+                if time_step > 0: tf.get_variable_scope().reuse_variables()
+                    (cell_output, state) = cell(images[:, time_step, :], state)
+                    outputs.append(cell_output)
+
+        # do stuff with cell_output
+
+
+
+
+
+    def inference():
+        pass
+
+
+
+def deconv(input, name, orig_shape, stride=4, padding=1):
+    with tf.variable_scope(name):
+
+        input_shape = input.get_shape().as_list()
+        dyn_input_shape = tf.shape(input)
+
+        kw = orig_shape[1] + ((input_shape[1] - 1) * stride - 2 * padding)
+        kh = orig_shape[2] + ((input_shape[2] - 1) * stride - 2 * padding)
+
+        batch_size = dyn_input_shape[0]
+
+        # print "batch_size", batch_size, input_shape, orig_shape
+
+        print [kw, kh, orig_shape[3], input_shape[3]]
+        print orig_shape[1], orig_shape[2], orig_shape[3]
+
+        kernel = tf.get_variable(name + "_weights",
+                            shape=[kw, kh, orig_shape[3], input_shape[3]],
+                            initializer=tf.truncated_normal_initializer(stddev=5e-2))
+
+
+
+        # out_h = dyn_input_shape[1] * stride
+        # out_w = dyn_input_shape[2] * stride
+
+        # out_shape = tf.pack([batch_size, out_h, out_w, 1])
+
+        # print "out shape", out_shape.get_shape()
+
+        # get the weights and biases
+        # kernel = tf.get_variable(name + "_weights",
+        #                          shape=filter_shape,
+        #                          dtype=tf.float32, 
+        #                          initializer=tf.truncated_normal_initializer(stddev=5e-2, dtype=tf.float32))
+
+
+        # convolve
+        output_shape = tf.pack([batch_size, orig_shape[1], orig_shape[2], orig_shape[3]])
+        print "hummmmm", output_shape
+        conv = tf.nn.conv2d_transpose(input, kernel, output_shape, [1, stride, stride, 1], padding='SAME')
+
+        b = tf.get_variable(
+            name + '_b', [orig_shape[3]],
+            initializer=tf.constant_initializer(0.0))
+
+        # relu
+        return conv + b
 
