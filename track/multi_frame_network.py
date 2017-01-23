@@ -27,7 +27,7 @@ class MultiframeNet:
 
     def inference(self, images, frame_depth, train=False, debug=False):
         # [batch, in_depth, in_height, in_width, in_channels]
-        print images.get_shape()
+        # print(images.get_shape())
         self.conv1 = self._conv_layer(images, "conv1", [frame_depth, 5, 5, 3, 32], [1, 2, 2, 2, 1])
         self.pool1 = self._max_pool(self.conv1, 'pool1', 5, 2)
 

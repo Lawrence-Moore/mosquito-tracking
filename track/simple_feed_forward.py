@@ -47,8 +47,12 @@ class SimpleNet:
         self.pool5 = self._max_pool(self.conv5, 'pool5', 17, 1)
 
 
-        self.fc1 = self._conv_layer(self.pool4, "fc1", [1, 1, 32, 64])
+        self.fc1 = self._conv_layer(self.pool5, "fc1", [1, 1, 32, 64])
         self.fc2 = self._conv_layer(self.fc1, "fc2", [1, 1, 64, 64])
+
+        # keep_prob = tf.placeholder(tf.float32)
+        # self.fc2_do = tf.nn.dropout(self.fc2, keep_prob)
+
 
         self.heatmap = self.deconv(self.fc2, "deconv")
 
@@ -96,40 +100,6 @@ class SimpleNet:
             output_shape = tf.pack([tf.shape(input)[0], output_shape[1], output_shape[2], output_shape[3]])
             return tf.nn.conv2d_transpose(input, kernel, output_shape, [1, stride, stride, 1], padding='VALID')
 
-
-    def _variable_with_weight_decay(self, shape, stddev, wd):
-        """Helper to create an initialized Variable with weight decay.
-
-        Note that the Variable is initialized with a truncated normal
-        distribution.
-        A weight decay is added only if one is specified.
-
-        Args:
-          name: name of the variable
-          shape: list of ints
-          stddev: standard deviation of a truncated Gaussian
-          wd: add L2Loss weight decay multiplied by this float. If None, weight
-              decay is not added for this Variable.
-
-        Returns:
-          Variable Tensor
-        """
-
-        initializer = tf.truncated_normal_initializer(stddev=stddev)
-        var = tf.get_variable('weights', shape=shape,
-                              initializer=initializer)
-
-        if wd and (not tf.get_variable_scope().reuse):
-            weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
-            tf.add_to_collection('losses', weight_decay)
-        return var
-
-    def _bias_variable(self, shape, constant=0.0):
-        initializer = tf.constant_initializer(constant)
-        return tf.get_variable(name='biases', shape=shape,
-                               initializer=initializer)
-
-
     def loss(self, logits, labels):
         cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, labels)
         loss = tf.reduce_mean(cross_entropy)
@@ -145,8 +115,8 @@ class SimpleNet:
         for l in losses + [total_loss]:
             # Name each loss as '(raw)' and name the moving average version of the loss
             # as the original loss name.
-            tf.scalar_summary(l.op.name +' (raw)', l)
-            tf.scalar_summary(l.op.name, loss_averages.average(l))
+            tf.summary.scalar(l.op.name +' (raw)', l)
+            tf.summary.scalar(l.op.name, loss_averages.average(l))
 
         return loss_averages_op
 
@@ -162,7 +132,7 @@ class SimpleNet:
                                       decay_steps,
                                       LEARNING_RATE_DECAY_FACTOR,
                                       staircase=True)
-        tf.scalar_summary('learning_rate', lr)
+        tf.summary.scalar('learning_rate', lr)
 
         # Generate moving averages of all losses and associated summaries.
         loss_averages_op = self._add_loss_summaries(total_loss)
@@ -177,12 +147,12 @@ class SimpleNet:
 
         # Add histograms for trainable variables.
         for var in tf.trainable_variables():
-            tf.histogram_summary(var.op.name, var)
+            tf.summary.histogram(var.op.name, var)
 
         # Add histograms for gradients.
         for grad, var in grads:
             if grad is not None:
-                tf.histogram_summary(var.op.name + '/gradients', grad)
+                tf.summary.histogram(var.op.name + '/gradients', grad)
 
         # Track the moving averages of all trainable variables.
         variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
@@ -209,6 +179,6 @@ class SimpleNet:
         # session. This helps the clarity of presentation on tensorboard.
         tensor_name = x.op.name
         # tensor_name = re.sub('%s_[0-9]*/' % TOWER_NAME, '', x.op.name)
-        tf.histogram_summary(tensor_name + '/activations', x)
-        tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
+        tf.summary.histogram(tensor_name + '/activations', x)
+        tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 

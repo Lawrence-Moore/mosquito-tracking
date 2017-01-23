@@ -22,11 +22,17 @@ def train():
     """Eval CIFAR-10 for a number of steps."""
     with tf.Graph().as_default():
         global_step = tf.Variable(0, trainable=False)
-        net_type = 'multi-frame'
+        net_type = 'simple'
         new_shape = (1008, 1008, 3)
         if net_type == 'simple':
             # Get images and labels for the skeets
             images_np, labels_np = load_data.load_single_frame(new_shape)
+
+            print("images_np", images_np.shape, labels_np.shape)
+
+            # for testing purposes:
+            # images_np = labels_np
+
             images = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
             labels = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
 
@@ -51,7 +57,7 @@ def train():
             # Build a Graph that computes the logits predictions from the
             # inference model.
             net = multi_frame_network.MultiframeNet()
-            print "shapes", images.get_shape(), tf.shape(images)
+            print("shapes", images.get_shape(), tf.shape(images))
             logits = net.inference(images, frame_depth)
 
             # Calculate loss.
@@ -62,33 +68,32 @@ def train():
             train_op = net.train(loss, global_step)
 
         # Create a saver.
-        saver = tf.train.Saver(tf.all_variables())
+        saver = tf.train.Saver(tf.global_variables())
 
         # Build the summary operation based on the TF collection of Summaries.
-        summary_op = tf.merge_all_summaries()
+        summary_op = tf.summary.merge_all()
 
         # Build an initialization operation to run below.
-        print "initializing all variables"
-        init = tf.initialize_all_variables()
+        print("initializing all variables")
+        init = tf.global_variables_initializer()
 
         # Start running operations on the Graph.
-        sess = tf.Session(config=tf.ConfigProto(
-        log_device_placement=False))
+        sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
         sess.run(init)
 
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
 
-        summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, sess.graph)
+        summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
 
-        print "create the summar writter and begin training"
+        print("create the summar writter and begin training")
 
         for step in xrange(FLAGS.max_steps):
             start_time = time.time()
-            _, loss_value = sess.run([train_op, loss], feed_dict={images: images_np, labels: labels_np})
+            _, loss_value = sess.run([train_op, loss], feed_dict={images: labels_np, labels: labels_np})
             duration = time.time() - start_time
 
-            print "got here"
+            # print("got here")
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
             if step % 10 == 0:
@@ -96,19 +101,18 @@ def train():
                 examples_per_sec = num_examples_per_step / duration
                 sec_per_batch = float(duration)
 
-            format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                          'sec/batch)')
-            print (format_str % (datetime.now(), step, loss_value,
-                                 examples_per_sec, sec_per_batch))
+                format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f sec/batch)')
+                print(format_str % (datetime.now(), step, loss_value,
+                                     examples_per_sec, sec_per_batch))
 
-            if step % 100 == 0:
-                summary_str = sess.run(summary_op, feed_dict={images: images_np, labels: labels_np})
-                summary_writer.add_summary(summary_str, step)
+                if step % 100 == 0:
+                    summary_str = sess.run(summary_op, feed_dict={images: images_np, labels: labels_np})
+                    summary_writer.add_summary(summary_str, step)
 
-            # Save the model checkpoint periodically.
-            if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
-                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
+                # Save the model checkpoint periodically.
+                if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
+                    checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                    saver.save(sess, checkpoint_path, global_step=step)
 
 
 def main(argv=None):

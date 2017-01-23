@@ -1,5 +1,5 @@
-import cv2
-import scipy.io as sio
+import imageio
+import h5py
 import numpy as np
 
 videoName = "../generate/myVideo.avi"
@@ -8,7 +8,7 @@ locations = "../generate/locations.mat"
 def load_single_frame(new_shape):
     labels = read_mat(locations, new_shape)
     images = convert_video_to_numpy_array(videoName, new_shape)
-    return labels, images
+    return images, labels
 
 def load_multi_frame(frame_size, new_shape):
     labels = read_mat(locations, new_shape)
@@ -23,18 +23,17 @@ def load_multi_frame(frame_size, new_shape):
 
 
 def convert_video_to_numpy_array(name, new_shape):
-    vidcap = cv2.VideoCapture(name)
-    success, image = vidcap.read()
+    vid = imageio.get_reader(name)
+    image = vid.get_data(1)
     image = np.resize(image, new_shape)
-    success = True
 
     images = image[None, :]
-    while success:
-        success, image = vidcap.read()
+    for i, image in enumerate(vid):
         image = np.resize(image, new_shape)
-        if success: images = np.concatenate((images, image[None, :]))
-    return images
+        images = np.concatenate((images, image[None, :]))
+    return images[1:, :, :, :]
 
 def read_mat(file_name, new_shape):
-    maps = np.rollaxis(sio.loadmat(file_name)['locations'], 3, 0)
+    maps = np.array(h5py.File(file_name)['locations'])
+    maps = np.rollaxis(np.rollaxis(maps, 1, 0), 0, 4)
     return np.resize(maps, [maps.shape[0], new_shape[0], new_shape[1], new_shape[2]])

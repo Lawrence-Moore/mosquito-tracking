@@ -36,11 +36,11 @@ writerObj.FrameRate = framerate;
  for i = 1: frames_per_movement: (num_seconds * framerate)
      [positions, trajs] = generateMovement(positions, trajs, moveSizes, size(image));
      [grid, blendedImage] = insertMosquito(image, positions, radii);
-     grids = cat(4, grids, grid);
      % convert the image to a frame
      frame = im2frame(blendedImage);
      
-     for v=1:frames_per_movement 
+     for v=1:frames_per_movement
+         grids = cat(4, grids, grid);
          writeVideo(writerObj, frame);
      end
  end
