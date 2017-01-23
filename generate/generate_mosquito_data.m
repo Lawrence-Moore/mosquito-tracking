@@ -16,7 +16,7 @@ function [locations] = generate_mosquito_data(image, num_seconds, frames_per_mov
 %   image = imread('room.jpg');
 %   generate_mosquito_data(image, 10, 3, 3, [3, 5, 6], [5, 5, 6]);
 
-framerate = 5;
+framerate = 20;
 writerObj = VideoWriter('myVideo.avi');
 writerObj.FrameRate = framerate;
 
@@ -47,5 +47,5 @@ writerObj.FrameRate = framerate;
  % close the writer object
  close(writerObj);
  locations = grids;
- save('locations.mat', 'locations');
+ save('locations.mat', 'locations', '-v7.3');
 end
