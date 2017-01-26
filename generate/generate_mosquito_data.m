@@ -1,4 +1,4 @@
-function [locations] = generate_mosquito_data(image, num_seconds, frames_per_movement, numMos, radii, moveSizes)
+function [locations] = generate_mosquito_data(img, num_seconds, frames_per_movement, numMos, radii, moveSizes)
                             
 %                             video_path, new_video_name, num_seconds, mosquito_size, ...
 %                                 mosquito_distance, mosquito_speed, frames_per_movement
@@ -28,17 +28,17 @@ writerObj.FrameRate = framerate;
  
  % initialize the mosquito positions
  for i=1:numMos
-    positions(i, :) = round(rand([1,2]) .* [size(image, 1), size(image, 2)]);
+    positions(i, :) = round(rand([1,2]) .* [size(img, 1), size(img, 2)]);
     trajs(i, :) = rand([1,2]);
  end
  grids = [];
  % write the frames to the video
  for i = 1: frames_per_movement: (num_seconds * framerate)
-     [positions, trajs] = generateMovement(positions, trajs, moveSizes, size(image));
-     [grid, blendedImage] = insertMosquito(image, positions, radii);
+     [positions, trajs] = generateMovement(positions, trajs, moveSizes, size(img));
+     [grid, blendedImage] = insertMosquito(img, positions, radii);
      % convert the image to a frame
      frame = im2frame(blendedImage);
-     
+
      for v=1:frames_per_movement
          grids = cat(4, grids, grid);
          writeVideo(writerObj, frame);

@@ -30,11 +30,8 @@ def train():
 
             print("images_np", images_np.shape, labels_np.shape)
 
-            # for testing purposes:
-            # images_np = labels_np
-
             images = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
-            labels = tf.placeholder(tf.float32, shape=[None, images_np.shape[1], images_np.shape[2], images_np.shape[3]])
+            labels = tf.placeholder(tf.float32, shape=[None, labels_np.shape[1], labels_np.shape[2], labels_np.shape[3]])
 
             # Build a Graph that computes the logits predictions from the
             # inference model.
@@ -90,7 +87,7 @@ def train():
 
         for step in xrange(FLAGS.max_steps):
             start_time = time.time()
-            _, loss_value = sess.run([train_op, loss], feed_dict={images: labels_np, labels: labels_np})
+            _, loss_value = sess.run([train_op, loss], feed_dict={images: images_np[0:20, :, :, :], labels: images_np[0:20, :, :, :]})
             duration = time.time() - start_time
 
             # print("got here")

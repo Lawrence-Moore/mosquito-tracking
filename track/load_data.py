@@ -1,4 +1,4 @@
-import imageio
+from moviepy.editor import VideoFileClip
 import h5py
 import numpy as np
 
@@ -19,19 +19,21 @@ def load_multi_frame(frame_size, new_shape):
     for index in range(0, labels.shape[0] - frame_size):
         multiframe_labels[index, :, :, :] = labels[index:index + frame_size, :, :, :]
         multiframe_images[index, :, :, :] = images[index:index + frame_size, :, :, :]
-    return multiframe_labels, multiframe_images
+    return multiframe_images, multiframe_labels
 
 
 def convert_video_to_numpy_array(name, new_shape):
-    vid = imageio.get_reader(name)
-    image = vid.get_data(1)
+    vid = VideoFileClip(name)
+    num_frames = vid.fps * vid.end
+    image = vid.get_frame(1)
     image = np.resize(image, new_shape)
 
     images = image[None, :]
-    for i, image in enumerate(vid):
+    for i in range(2, int(num_frames) + 1):
+        image = vid.get_frame(i)
         image = np.resize(image, new_shape)
         images = np.concatenate((images, image[None, :]))
-    return images[1:, :, :, :]
+    return images[0:, :, :, :]
 
 def read_mat(file_name, new_shape):
     maps = np.array(h5py.File(file_name)['locations'])

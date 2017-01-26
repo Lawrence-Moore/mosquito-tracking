@@ -6,6 +6,7 @@ from math import ceil
 import numpy as np
 import sys
 import os
+from PIL import Image
 from tensorflow.python.ops import rnn, rnn_cell
 
 
@@ -21,7 +22,7 @@ MOVING_AVERAGE_DECAY = 0.9999
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 50000
 NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
-INITIAL_LEARNING_RATE = 0.1       # Initial learning rate.
+INITIAL_LEARNING_RATE = 0.0001       # Initial learning rate.
 display_step = 10
 learning_rate = 0.001
 training_iters = 100000
@@ -101,6 +102,8 @@ class SimpleNet:
             return tf.nn.conv2d_transpose(input, kernel, output_shape, [1, stride, stride, 1], padding='VALID')
 
     def loss(self, logits, labels):
+        tf.summary.image("lables", tf.cast(labels, tf.uint8))
+        tf.summary.image("predictions", tf.cast(logits, tf.uint8))
         cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits, labels)
         loss = tf.reduce_mean(cross_entropy)
         return loss

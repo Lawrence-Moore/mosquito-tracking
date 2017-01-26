@@ -1,5 +1,5 @@
 function [grid, blendedImage] = insertMosquito(image, positions, radii)
-    grid = zeros(size(image));
+    grid = zeros(size(image, 1), size(image, 2));
     blendedImage = image;
     for i=1:size(positions, 1)
         position = positions(i, :);
@@ -10,6 +10,7 @@ function [grid, blendedImage] = insertMosquito(image, positions, radii)
         darkenFactor = 20;
         blendedImage = blendedImage .* uint8(repmat(~mosquito, [1,1,3]));
         grid(mosquito) = 1;
+    
 % 
 %         % darken the surrounding pixels
 %         darkenFactor = 2;
@@ -39,6 +40,8 @@ function [grid, blendedImage] = insertMosquito(image, positions, radii)
 %             end
 %         end
     end
+    
+    grid = cat(3, grid, grid, grid); 
 end
 
 function [withinB] = checkBounds(image, x, y)
