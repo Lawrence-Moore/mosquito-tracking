@@ -3,7 +3,7 @@ function [grid, blendedImage] = insertMosquito(image, positions, radii)
     blendedImage = image;
     for i=1:size(positions, 1)
         position = positions(i, :);
-        fullPixels = floor(radii(1));
+        fullPixels = floor(radii(i));
 
         mosquito = createCircle(size(image), position, fullPixels);
         
