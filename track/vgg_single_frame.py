@@ -150,8 +150,8 @@ def _add_loss_summaries(total_loss):
     return loss_averages_op
 
 
-def loss(logits, labels):
-    return tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name="entropy")))
+def loss(logits, labels, weight=100):
+    return tf.reduce_mean((tf.nn.weighted_cross_entropy_with_logits(logits, labels, pos_weight=weight, name="entropy")))
 
 
 # def main(argv=None):

@@ -1,4 +1,4 @@
-from moviepy.editor import VideoFileClip
+import imageio
 from PIL import Image
 # import h5py
 import h5py
@@ -34,17 +34,15 @@ def load_multi_frame(frame_size, new_shape):
 
 
 def convert_video_to_numpy_array(name, new_shape):
-    vid = VideoFileClip(name)
-    num_frames = vid.fps * vid.end
-    image = vid.get_frame(1)
+    vid = imageio.get_reader(name)
+    image = vid.get_data(1)
     # image = np.array(Image.fromarray(image).resize(new_shape[0:2]))
 
     images = image[None, :]
-    for i in range(2, int(num_frames) + 1):
-        image = vid.get_frame(i)
+    for i, image in enumerate(vid):
         # image = np.array(Image.fromarray(image).resize(new_shape[0:2]))
         images = np.concatenate((images, image[None, :]))
-    return images[0:, :, :, :]
+    return images[1:, :, :, :]
 
 def read_heatmap(file_name, new_shape):
     # maps = np.array(h5py.File(file_name)['locations'])

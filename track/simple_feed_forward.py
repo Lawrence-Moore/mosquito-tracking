@@ -13,7 +13,7 @@ from tensorflow.python.ops import rnn, rnn_cell
 FLAGS = tf.app.flags.FLAGS
 
 # Basic model parameters.
-tf.app.flags.DEFINE_integer('batch_size', 128,
+tf.app.flags.DEFINE_integer('batch_size', 20,
                             """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_boolean('use_fp16', False,
                             """Train the model using fp16.""")
@@ -22,9 +22,9 @@ MOVING_AVERAGE_DECAY = 0.9999
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 50000
 NUM_EPOCHS_PER_DECAY = 350.0      # Epochs after which learning rate decays.
 LEARNING_RATE_DECAY_FACTOR = 0.1  # Learning rate decay factor.
-INITIAL_LEARNING_RATE = 0.0001       # Initial learning rate.
+INITIAL_LEARNING_RATE = 0.00001       # Initial learning rate.
 display_step = 10
-learning_rate = 0.001
+learning_rate = 0.00001
 training_iters = 100000
 
 

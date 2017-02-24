@@ -34,8 +34,14 @@ def inference(images, keep_prob, frame_depth):
 
     frames = tf.split(1, frame_depth, images)
     frame_intermediates = []
-    for i in range(frame_depth):
-        with tf.variable_scope("vgg_%d"%i):
+
+    with tf.variable_scope("vgg_net"):
+        image = tf.squeeze(frames[0], squeeze_dims=1)
+        processed_image = utils.process_image(image, mean_pixel)
+        image_net = vgg_net(weights, processed_image)
+        frame_intermediates.append(image_net['conv5_3'])
+    for i in range(1, frame_depth):
+        with tf.variable_scope("vgg_net", reuse=True):
             # print("image", image.get_shape())
             image = tf.squeeze(frames[i], squeeze_dims=1)
             processed_image = utils.process_image(image, mean_pixel)
@@ -158,5 +164,5 @@ def _add_loss_summaries(total_loss):
     return loss_averages_op
 
 
-def loss(logits, labels):
-    return tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name="entropy")))
+def loss(logits, labels, weight=100):
+    return tf.reduce_mean((tf.nn.weighted_cross_entropy_with_logits(logits, labels, pos_weight=weight, name="entropy")))

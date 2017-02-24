@@ -9,7 +9,7 @@ for i = 1:num_images
    num_sec = 10;
    num_frames_per_movement = 3;
    num_mosquitos = round(rand(1) * 5) + 1;
-   radii = round(rand(2, num_mosquitos) * 1) + 1;
+   radii = round(rand(1, num_mosquitos) * 1) + 3;
    move_sizes = round(rand(1, num_mosquitos) * 6) + 3;
    generate_mosquito_data(img, num_sec, num_frames_per_movement, num_mosquitos, ...
                           radii, move_sizes, video_name, label_name, pixel_pos_name);
