@@ -1,6 +1,6 @@
 import imageio
 from PIL import Image
-import cv2
+# import cv2
 import numpy as np
 import h5py
 import time
@@ -22,7 +22,7 @@ def load_single_frame(start, num_images):
         all_pixel_locations.append(read_locations(pixel_location_name))
 
         current_time = time.localtime()
-        print(i, time.strftime('%a, %d %b %Y %H:%M:%S GMT', current_time))
+        # print(i, time.strftime('%a, %d %b %Y %H:%M:%S GMT', current_time))
     return all_images, all_labels, all_pixel_locations
 
 def load_multi_frame(frame_size):
@@ -38,17 +38,17 @@ def load_multi_frame(frame_size):
 
 
 def convert_video_to_numpy_array(name):
-    vid = cv2.VideoCapture(name)
-    ret, image = vid.read()
+    vid = imageio.get_reader(name)
+    image = vid.get_data(1)
     # image = np.array(Image.fromarray(image).resize(new_shape[0:2]))
 
     images = image[None, :]
-    while ret:
+    for i, image in enumerate(vid):
         # image = np.array(Image.fromarray(image).resize(new_shape[0:2]))
-        ret, frame = vid.read()
-        if ret:
-            images = np.concatenate((images, frame[None, :]))
-    return images
+        images = np.concatenate((images, image[None, :]))
+    vid.close()
+    return images[1:, :, :, :]
+
 
 def read_heatmap(file_name):
     # maps = np.array(h5py.File(file_name)['locations'])

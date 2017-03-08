@@ -62,7 +62,7 @@ def build_net(net_type, image_shape, train=False):
     return image, label, keep_probability, logits, train_op, loss, pred_annotation
 
 
-def train(images_np, labels_np, all_pixel_locations, net_type, num_images, model_name):
+def train(num_image_range, net_type, model_name):
     # Create a saver.
     with tf.Graph().as_default():
         image_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
@@ -91,10 +91,10 @@ def train(images_np, labels_np, all_pixel_locations, net_type, num_images, model
             start_time = time.time()
 
             if net_type == 'single':
-                sample_images, sample_labels, _ = utils.get_single_frame_samples(images_np, labels_np, all_pixel_locations)
+                sample_images, sample_labels, _ = utils.get_single_frame_samples(num_image_range)
                 _, loss_value = sess.run([train_op, loss], feed_dict={image: sample_images, label: sample_labels, keep_probability: 0.85})
             elif net_type == "multi":
-                sample_images, sample_labels = utils.get_multi_frame_samples(images_np, labels_np, all_pixel_locations, FLAGS.frame_depth)
+                sample_images, sample_labels = utils.get_multi_frame_samples(num_image_range, FLAGS.frame_depth)
                 _, loss_value = sess.run([train_op, loss], feed_dict={image: sample_images, label: sample_labels, keep_probability: 0.85})
             duration = time.time() - start_time
 
@@ -123,7 +123,7 @@ def train(images_np, labels_np, all_pixel_locations, net_type, num_images, model
                     saver.save(sess, checkpoint_path)
 
 
-def evaluate(net_type, model_name, test_images, test_labels, real_locations):
+def evaluate(net_type, model_name, num_images_range):
     with tf.Graph().as_default():
 
         with tf.Session() as sess:
@@ -217,15 +217,17 @@ def main(argv=None):
         else:
             # load images
             train_num_images, test_num_images = int(args.train_num_images), int(args.test_num_images)
-            train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
-            test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)
+            train_num_images_range = (0, train_num_images - 1)
+            test_num_images_range = (70, test_num_images + 70 - 1)
+            # train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
+            # test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)
             
             print("Images loaded")
             # build the net
             if args.train == "True":
-                train(train_images, train_labels, train_pixel_locations, args.arch, train_num_images, args.model_name)
-            print(test_pixel_locations[0].shape, "wuttttt")
-            evaluate(args.arch, args.model_name, test_images, test_labels, test_pixel_locations)
+                train(train_num_images_range, args.arch, args.model_name)
+            # print(test_pixel_locations[0].shape, "wuttttt")
+            evaluate(args.arch, args.model_name, test_num_images_range)
     else:
         print("boy, you missing either the number of background images, architecture type, or name of the model to be saved with. Fix ya yourself")
 

@@ -35,6 +35,11 @@ writerObj.FrameRate = framerate;
  % initialize the mosquito positions
  for i=1:numMos
     positions(i, :) = round(rand([1,2]) .* [size(img, 1), size(img, 2)]);
+    newPosition = positions(i, :);
+    imageSize = size(img);
+    if (newPosition(1) > imageSize(1) || newPosition(2) > imageSize(2))
+        'yo'
+    end
     trajs(i, :) = rand([1,2]);
  end
  grids = [];

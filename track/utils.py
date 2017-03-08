@@ -7,6 +7,7 @@ import tarfile
 import zipfile
 import scipy.io
 import random
+from load_data import load_single_frame
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,21 +128,26 @@ def get_crop(location, crop_size, img_size):
             print(point, image_max_size)
             max_point = min_point
         return random.randint(min_point, max_point)
+    # if (location[0] >= img_size[0] or location[1] >= img_size[1]):
+    #     print(location, img_size)
     return get_point_within_range(location[0], img_size[0]), get_point_within_range(location[1], img_size[1])
 
 
-def get_single_frame_samples(images_np, labels_np, all_pixel_locations):
+def get_single_frame_samples(num_images_range):
     sample_images = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
     sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
     sample_skeeters = np.zeros((FLAGS.batch_size, 1, 2))
     # choose the examples
-    for i in range(FLAGS.batch_size):
-        img_index = random.randint(0, len(images_np) - 1)
+    img_index = random.randint(num_images_range[0], num_images_range[1])
 
-        # choose the background
-        source_image = images_np[img_index]
-        source_label = labels_np[img_index]
-        source_locations = all_pixel_locations[img_index]
+    all_images, all_labels, all_pixel_locations = load_single_frame(img_index , 1)
+
+    # choose the background
+    source_image = all_images[0]
+    source_label = all_labels[0]
+    source_locations = all_pixel_locations[0]
+
+    for i in range(FLAGS.batch_size):
 
         # choose the specific image
         random_index = random.randint(0, source_image.shape[0] - 1)
@@ -163,18 +169,21 @@ def get_single_frame_samples(images_np, labels_np, all_pixel_locations):
     return sample_images, sample_labels, sample_skeeters
 
 
-def get_multi_frame_samples(images_np, labels_np, all_pixel_locations, frame_depth):
+def get_multi_frame_samples(num_images_range, frame_depth):
     sample_images = np.zeros((FLAGS.batch_size, frame_depth, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
     sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
-    
+
+    img_index = random.randint(num_images_range[0], num_images_range[1])
+
+    all_images, all_labels, all_pixel_locations = load_single_frame(img_index , 1)
+
+    # choose the background
+    source_image = all_images[0]
+    source_label = all_labels[0]
+    source_locations = all_pixel_locations[0]
+
     # choose the examples
     for i in range(FLAGS.batch_size):
-        img_index = random.randint(0, len(images_np) - 1)
-
-        # choose the background
-        source_image = images_np[img_index]
-        source_label = labels_np[img_index]
-        source_locations = all_pixel_locations[img_index]
 
         # choose the specific image that's at least frame_depth back from the end
         random_index = random.randint(0, source_image.shape[0] - 1 - frame_depth)

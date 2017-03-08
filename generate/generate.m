@@ -1,5 +1,6 @@
 num_images = 80;
-for i = 1:num_images
+start = 1;
+for i = start: start + num_images - 1
    img_name = strcat(strcat('../data/image', num2str(i)), '.jpg');
    video_name =  strcat(strcat('../data/video', num2str(i)), '.avi');
    label_name =  strcat(strcat('../data/locations', num2str(i)), '.mat');

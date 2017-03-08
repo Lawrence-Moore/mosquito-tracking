@@ -5,7 +5,7 @@ newTrajs = zeros(size(oldTrajs));
 
 for i=1:size(oldTrajs, 1)
     oldTraj = oldTrajs(i, :);
-    oldPosition = oldPositions(i);
+    oldPosition = oldPositions(i, :);
     moveSize = moveSizes(i);
 
     % chance of the mosquito staying course

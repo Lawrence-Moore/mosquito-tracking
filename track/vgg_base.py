@@ -7,7 +7,7 @@ import datetime
 from six.moves import xrange
 
 FLAGS = tf.flags.FLAGS
-tf.flags.DEFINE_integer("batch_size", "15", "batch size for training")
+tf.flags.DEFINE_integer("batch_size", "40", "batch size for training")
 tf.flags.DEFINE_integer("frame_depth", "10", "number of frames used in the multi frame net")
 tf.flags.DEFINE_integer("MAX_ITERATION", "100000", "maximum number of iterations")
 tf.flags.DEFINE_integer("NUM_OF_CLASSES", "2", "number of classes to predict")
