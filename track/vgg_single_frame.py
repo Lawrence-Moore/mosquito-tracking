@@ -17,7 +17,7 @@ INITIAL_LEARNING_RATE = FLAGS.learning_rate
 
 MODEL_URL = 'http://www.vlfeat.org/matconvnet/models/beta16/imagenet-vgg-verydeep-19.mat'
 
-def inference(image, keep_prob):
+def inference(image, keep_prob, train=False):
     """
     Semantic segmentation network definition
     :param image: input image. Should have values in range 0-255
@@ -41,30 +41,29 @@ def inference(image, keep_prob):
 
         pool5 = utils.max_pool_2x2(conv_final_layer)
 
-        print("pool5 shape", pool5.get_shape())
         W6 = utils.weight_variable([7, 7, 512, 4096], name="W6")
         b6 = utils.bias_variable([4096], name="b6")
         conv6 = utils.conv2d_basic(pool5, W6, b6)
         relu6 = tf.nn.relu(conv6, name="relu6")
 
-        print("reul6 shape", relu6.get_shape())
-
         if FLAGS.debug:
             utils.add_activation_summary(relu6)
-        relu_dropout6 = tf.nn.dropout(relu6, keep_prob=keep_prob)
+        if train:
+            relu6 = tf.nn.dropout(relu6, keep_prob=keep_prob)
 
         W7 = utils.weight_variable([1, 1, 4096, 4096], name="W7")
         b7 = utils.bias_variable([4096], name="b7")
-        conv7 = utils.conv2d_basic(relu_dropout6, W7, b7)
+        conv7 = utils.conv2d_basic(relu6, W7, b7)
         relu7 = tf.nn.relu(conv7, name="relu7")
 
         if FLAGS.debug:
             utils.add_activation_summary(relu7)
-        relu_dropout7 = tf.nn.dropout(relu7, keep_prob=keep_prob)
+        if train:
+            relu7 = tf.nn.dropout(relu7, keep_prob=keep_prob)
 
         W8 = utils.weight_variable([1, 1, 4096, FLAGS.NUM_OF_CLASSES], name="W8")
         b8 = utils.bias_variable([FLAGS.NUM_OF_CLASSES], name="b8")
-        conv8 = utils.conv2d_basic(relu_dropout7, W8, b8)
+        conv8 = utils.conv2d_basic(relu7, W8, b8)
         # annotation_pred1 = tf.argmax(conv8, dimension=3, name="prediction1")
 
         # now to upscale to actual image size
@@ -87,7 +86,6 @@ def inference(image, keep_prob):
         conv_t3 = utils.conv2d_transpose_strided(fuse_2, W_t3, b_t3, output_shape=deconv_shape3, stride=8)
 
         annotation_pred = tf.argmax(conv_t3, dimension=3, name="prediction")
-        print("ayy", conv_t3)
 
     return tf.expand_dims(annotation_pred, dim=3), conv_t3
 

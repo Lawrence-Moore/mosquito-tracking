@@ -6,7 +6,9 @@ from six.moves import urllib
 import tarfile
 import zipfile
 import scipy.io
+import random
 
+FLAGS = tf.app.flags.FLAGS
 
 def get_model_data(dir_path, model_url):
     maybe_download_and_extract(dir_path, model_url)
@@ -40,6 +42,63 @@ def maybe_download_and_extract(dir_path, url_name, is_tarfile=False, is_zipfile=
                 zip_dir = zf.namelist()[0]
                 zf.extractall(dir_path)
 
+# Malisiewicz et al.
+def non_max_suppression_fast(boxes, overlapThresh):
+    # if there are no boxes, return an empty list
+    if len(boxes) == 0:
+        return []
+
+    # if the bounding boxes integers, convert them to floats --
+    # this is important since we'll be doing a bunch of divisions
+    if boxes.dtype.kind == "i":
+        boxes = boxes.astype("float")
+
+    # initialize the list of picked indexes
+    pick = []
+
+    # grab the coordinates of the bounding boxes
+    x1 = boxes[:, 0]
+    y1 = boxes[:, 1]
+    x2 = boxes[:, 2]
+    y2 = boxes[:, 3]
+
+    # compute the area of the bounding boxes and sort the bounding
+    # boxes by the bottom-right y-coordinate of the bounding box
+    area = (x2 - x1 + 1) * (y2 - y1 + 1)
+    idxs = np.argsort(y2)
+
+    # keep looping while some indexes still remain in the indexes
+    # list
+    while len(idxs) > 0:
+        # grab the last index in the indexes list and add the
+        # index value to the list of picked indexes
+        last = len(idxs) - 1
+        i = idxs[last]
+        pick.append(i)
+
+        # find the largest (x, y) coordinates for the start of
+        # the bounding box and the smallest (x, y) coordinates
+        # for the end of the bounding box
+        xx1 = np.maximum(x1[i], x1[idxs[:last]])
+        yy1 = np.maximum(y1[i], y1[idxs[:last]])
+        xx2 = np.minimum(x2[i], x2[idxs[:last]])
+        yy2 = np.minimum(y2[i], y2[idxs[:last]])
+
+        # compute the width and height of the bounding box
+        w = np.maximum(0, xx2 - xx1 + 1)
+        h = np.maximum(0, yy2 - yy1 + 1)
+
+        # compute the ratio of overlap
+        overlap = (w * h) / area[idxs[:last]]
+
+        # delete all indexes from the index list that have
+        idxs = np.delete(idxs, np.concatenate(([last],
+                                               np.where(overlap > overlapThresh)[0])))
+
+    # return only the bounding boxes that were picked using the
+    # integer data type
+    return boxes[pick].astype("int")
+
 
 def save_image(image, save_dir, name, mean=None):
     """
@@ -53,6 +112,88 @@ def save_image(image, save_dir, name, mean=None):
     if mean:
         image = unprocess_image(image, mean)
     misc.imsave(os.path.join(save_dir, name + ".png"), image)
+
+def get_crop(location, crop_size, img_size):
+    wiggle_room = 10
+
+    def get_point_within_range(point, image_max_size):
+        max_point = min(point, image_max_size - crop_size)
+        min_point = max(point - crop_size, 0)
+        # if point + crop_size - wiggle_room >= image_max_size:
+        #     min_point = point - crop_size + 1
+        # else:
+        #     min_point = max(random.randint(point + wiggle_room - crop_size, point - wiggle_room), 0)
+        if max_point < min_point:
+            print(point, image_max_size)
+            max_point = min_point
+        return random.randint(min_point, max_point)
+    return get_point_within_range(location[0], img_size[0]), get_point_within_range(location[1], img_size[1])
+
+
+def get_single_frame_samples(images_np, labels_np, all_pixel_locations):
+    sample_images = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
+    sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
+    sample_skeeters = np.zeros((FLAGS.batch_size, 1, 2))
+    # choose the examples
+    for i in range(FLAGS.batch_size):
+        img_index = random.randint(0, len(images_np) - 1)
+
+        # choose the background
+        source_image = images_np[img_index]
+        source_label = labels_np[img_index]
+        source_locations = all_pixel_locations[img_index]
+
+        # choose the specific image
+        random_index = random.randint(0, source_image.shape[0] - 1)
+        sample_image = source_image[random_index, :, :, :]
+        sample_label = source_label[random_index, :, :, 0]
+        sample_locations = source_locations[random_index, :, :]
+
+        # crop to include the 'skeeter
+        mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
+        (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
+
+        # randomly choose an area
+        sample_images[i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
+        label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
+        sample_labels[i, :, :, 0][label_crop == 0] = 1
+        sample_labels[i, :, :, 1][label_crop == 1] = 1
+        sample_skeeters[i, :, :] = mosquito - np.array([x_min, y_min])
+
+    return sample_images, sample_labels, sample_skeeters
+
+
+def get_multi_frame_samples(images_np, labels_np, all_pixel_locations, frame_depth):
+    sample_images = np.zeros((FLAGS.batch_size, frame_depth, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
+    sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
+    
+    # choose the examples
+    for i in range(FLAGS.batch_size):
+        img_index = random.randint(0, len(images_np) - 1)
+
+        # choose the background
+        source_image = images_np[img_index]
+        source_label = labels_np[img_index]
+        source_locations = all_pixel_locations[img_index]
+
+        # choose the specific image that's at least frame_depth back from the end
+        random_index = random.randint(0, source_image.shape[0] - 1 - frame_depth)
+        for frame_i in range(frame_depth):
+            sample_image = source_image[random_index + frame_i, :, :, :]
+            sample_locations = source_locations[random_index + frame_i, :, :]
+
+            # crop to include the 'skeeter
+            mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
+            (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
+            sample_images[i, frame_i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
+
+        # get the last frame
+        sample_label = source_label[random_index + frame_depth, :, :, 0]
+        label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
+        sample_labels[i, :, :, 0][label_crop == 0] = 1
+        sample_labels[i, :, :, 1][label_crop == 1] = 1
+
+    return sample_images, sample_labels
 
 
 def get_variable(weights, name):

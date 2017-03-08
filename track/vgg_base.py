@@ -8,6 +8,7 @@ from six.moves import xrange
 
 FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("batch_size", "15", "batch size for training")
+tf.flags.DEFINE_integer("frame_depth", "10", "number of frames used in the multi frame net")
 tf.flags.DEFINE_integer("MAX_ITERATION", "100000", "maximum number of iterations")
 tf.flags.DEFINE_integer("NUM_OF_CLASSES", "2", "number of classes to predict")
 tf.flags.DEFINE_integer("IMAGE_SIZE", "512", "image size during training")
@@ -18,6 +19,8 @@ tf.flags.DEFINE_float("learning_rate", "1e-4", "Learning rate for Adam Optimizer
 tf.flags.DEFINE_string("model_dir", "model/", "Path to vgg model mat")
 tf.flags.DEFINE_bool('debug', "False", "Debug mode: True/ False")
 tf.flags.DEFINE_string('mode', "train", "Mode train/ test/ visualize")
+tf.flags.DEFINE_integer('max_steps', 10000, "Number of batches to run.")
+tf.flags.DEFINE_string('train_dir', 'train_logs/', "Directory where to write event logs and checkpoint.")
 
 def vgg_net(weights, image):
     layers = (

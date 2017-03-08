@@ -6,119 +6,67 @@ import numpy as np
 import random
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+import sys
 import load_data
 import vgg_single_frame, vgg_multi_frame
 import multi_frame_network
 from PIL import Image
 import argparse
+import utils
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('max_steps', 10000,
-                            """Number of batches to run.""")
 
-tf.app.flags.DEFINE_string('train_dir', 'tmp/train_logs',
-                           """Directory where to write event logs """
-                           """and checkpoint.""")
+def build_net(net_type, image_shape, train=False):
+    global_step = tf.Variable(0, trainable=False)
+    if net_type == 'single':
+        # Get images and labels for the skeets
+        image = tf.placeholder(tf.float32, shape=[None, image_shape[0], image_shape[1], image_shape[2]])
+        label = tf.placeholder(tf.float32, shape=[None, image_shape[0], image_shape[1], 2])
+
+        # Build a Graph that computes the logits predictions from the
+        # inference model.
+        keep_probability = tf.placeholder(tf.float32, name="keep_probability")
+        pred_annotation, logits = vgg_single_frame.inference(image, keep_probability, train=train)
+
+        tf.summary.image("input_image", image)
+        tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
+        tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
+
+        # Calculate loss.
+        loss = vgg_single_frame.loss(logits, label, 500)
+
+        # Build a Graph that trains the model with one batch of examples and
+        # updates the model parameters.
+        train_op = vgg_single_frame.train(loss, global_step)
+    elif net_type == 'multi':
+        # Get images and labels for the skeets
+        image = tf.placeholder(tf.float32, shape=[None, FLAGS.frame_depth, image_shape[0], image_shape[1], image_shape[2]])
+        label = tf.placeholder(tf.float32, shape=[None, image_shape[0], image_shape[1], 2])
+
+        # Build a Graph that computes the logits predictions from the
+        # inference model.
+        keep_probability = tf.placeholder(tf.float32, name="keep_probability")
+        pred_annotation, logits = vgg_multi_frame.inference(image, keep_probability, FLAGS.frame_depth)
+
+        tf.summary.image("input_image", tf.squeeze(tf.split(1, FLAGS.frame_depth, image)[FLAGS.frame_depth - 1], squeeze_dims=1))
+        tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
+        tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
+
+        # Calculate loss.
+        loss = vgg_multi_frame.loss(logits, label, 500)
+
+        # Build a Graph that trains the model with one batch of examples and
+        # updates the model parameters.
+        train_op = vgg_multi_frame.train(loss, global_step)
+    return image, label, keep_probability, logits, train_op, loss, pred_annotation
 
 
-def inference(num_images, net_type):
+def train(images_np, labels_np, all_pixel_locations, net_type, num_images, model_name):
+    # Create a saver.
     with tf.Graph().as_default():
-        global_step = tf.Variable(0, trainable=False)
-        new_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
-        images_np, labels_np, all_pixel_locations = load_data.load_single_frame(num_images, new_shape)
-        if net_type == 'single':
-            # Get images and labels for the skeets
-            image = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], new_shape[2]])
-            label = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], 2])
-
-            # Build a Graph that computes the logits predictions from the
-            # inference model.
-            keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            pred_annotation, logits = vgg_single_frame.inference(image, keep_probability)
-
-            tf.summary.image("input_image", image)
-            tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
-            tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
-
-            # Calculate loss.
-            loss = vgg_single_frame.loss(logits, label, 500)
-
-            # Build a Graph that trains the model with one batch of examples and
-            # updates the model parameters.
-            train_op = vgg_single_frame.train(loss, global_step)
-        elif net_type == 'multi':
-            # Get images and labels for the skeets
-            frame_depth = 10
-            image = tf.placeholder(tf.float32, shape=[None, frame_depth, new_shape[0], new_shape[1], new_shape[2]])
-            label = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], 2])
-
-            # Build a Graph that computes the logits predictions from the
-            # inference model.
-            keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            pred_annotation, logits = vgg_multi_frame.inference(image, keep_probability, frame_depth)
-
-            tf.summary.image("input_image", tf.squeeze(tf.split(1, frame_depth, image)[frame_depth - 1], squeeze_dims=1))
-            tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
-            tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
-
-            # Calculate loss.
-            loss = vgg_multi_frame.loss(logits, label, 500)
-
-            # Build a Graph that trains the model with one batch of examples and
-            # updates the model parameters.
-            train_op = vgg_multi_frame.train(loss, global_step)
-        return train_op, loss
-
-
-def train(num_images, net_type, model_name):
-    with tf.Graph().as_default():
-        global_step = tf.Variable(0, trainable=False)
-        new_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
-        images_np, labels_np, all_pixel_locations = load_data.load_single_frame(num_images, new_shape)
-        if net_type == 'single':
-            # Get images and labels for the skeets
-            image = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], new_shape[2]])
-            label = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], 2])
-
-            # Build a Graph that computes the logits predictions from the
-            # inference model.
-            keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            pred_annotation, logits = vgg_single_frame.inference(image, keep_probability)
-
-            tf.summary.image("input_image", image)
-            tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
-            tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
-
-            # Calculate loss.
-            loss = vgg_single_frame.loss(logits, label, 500)
-
-            # Build a Graph that trains the model with one batch of examples and
-            # updates the model parameters.
-            train_op = vgg_single_frame.train(loss, global_step)
-        elif net_type == 'multi':
-            # Get images and labels for the skeets
-            frame_depth = 10
-            image = tf.placeholder(tf.float32, shape=[None, frame_depth, new_shape[0], new_shape[1], new_shape[2]])
-            label = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], 2])
-
-            # Build a Graph that computes the logits predictions from the
-            # inference model.
-            keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            pred_annotation, logits = vgg_multi_frame.inference(image, keep_probability, frame_depth)
-
-            tf.summary.image("input_image", tf.squeeze(tf.split(1, frame_depth, image)[frame_depth - 1], squeeze_dims=1))
-            tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
-            tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
-
-            # Calculate loss.
-            loss = vgg_multi_frame.loss(logits, label, 500)
-
-            # Build a Graph that trains the model with one batch of examples and
-            # updates the model parameters.
-            train_op = vgg_multi_frame.train(loss, global_step)
-
-        # Create a saver.
+        image_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
+        image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, image_shape, train=True)
         saver = tf.train.Saver(tf.global_variables())
 
         # Build the summary operation based on the TF collection of Summaries.
@@ -129,13 +77,13 @@ def train(num_images, net_type, model_name):
         init = tf.global_variables_initializer()
 
         # Start running operations on the Graph.
-        sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
+        sess = tf.Session()
         sess.run(init)
 
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
 
-        summary_writer = tf.summary.FileWriter(FLAGS.train_dir, sess.graph)
+        summary_writer = tf.summary.FileWriter(FLAGS.logs_dir, sess.graph)
 
         print("create the summar writter and begin training")
 
@@ -143,10 +91,10 @@ def train(num_images, net_type, model_name):
             start_time = time.time()
 
             if net_type == 'single':
-                sample_images, sample_labels = get_single_frame_samples(num_images, images_np, labels_np, all_pixel_locations)
+                sample_images, sample_labels, _ = utils.get_single_frame_samples(images_np, labels_np, all_pixel_locations)
                 _, loss_value = sess.run([train_op, loss], feed_dict={image: sample_images, label: sample_labels, keep_probability: 0.85})
             elif net_type == "multi":
-                sample_images, sample_labels = get_multi_frame_samples(num_images, images_np, labels_np, all_pixel_locations, frame_depth)
+                sample_images, sample_labels = utils.get_multi_frame_samples(images_np, labels_np, all_pixel_locations, FLAGS.frame_depth)
                 _, loss_value = sess.run([train_op, loss], feed_dict={image: sample_images, label: sample_labels, keep_probability: 0.85})
             duration = time.time() - start_time
 
@@ -170,103 +118,114 @@ def train(num_images, net_type, model_name):
                     summary_writer.add_summary(summary_str, step)
 
                 # Save the model checkpoint periodically.
-                if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
-                    checkpoint_path = os.path.join(FLAGS.train_dir, '%s_step%d.ckpt' % (model_name, step))
-                    saver.save(sess, checkpoint_path, global_step=step)
+                if step == 10 or step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
+                    checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
+                    saver.save(sess, checkpoint_path)
 
 
+def evaluate(net_type, model_name, test_images, test_labels, real_locations):
+    with tf.Graph().as_default():
 
-def get_crop(location, crop_size, img_size):
-    wiggle_room = 10
+        with tf.Session() as sess:
+            sess.run(tf.initialize_all_variables())
+            for background_image, background_locations in zip(test_images, real_locations):
+                # tf.reset_default_graph()
+            # sample_images, sample_labels, sample_skeeters = utils.get_single_frame_samples(test_images, test_labels,
+            #                                                                                real_locations)
+            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
+            #                                                                                     sample_images[0].shape)
+                random_index = random.randint(0, background_image.shape[0] - 1)
+                sample_image = background_image[random_index, :, :, :]
+                sample_locations = background_locations[random_index, :, :]
 
-    def get_point_within_range(point, image_max_size):
-        max_point = min(point, image_max_size - crop_size)
-        min_point = max(point - crop_size, 0)
-        # if point + crop_size - wiggle_room >= image_max_size:
-        #     min_point = point - crop_size + 1
-        # else:
-        #     min_point = max(random.randint(point + wiggle_room - crop_size, point - wiggle_room), 0)
-        return random.randint(min_point, max_point)
-    return get_point_within_range(location[0], img_size[0]), get_point_within_range(location[1], img_size[1])
+                image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_image.shape)
+                saver = tf.train.Saver(tf.global_variables())
 
+                checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
+                saver.restore(sess, checkpoint_path)
 
-def get_single_frame_samples(num_images, images_np, labels_np, all_pixel_locations):
-    sample_images = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
-    sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
-    
-    # choose the examples
-    for i in range(FLAGS.batch_size):
-        img_index = random.randint(0, num_images - 1)
+                # try something from each image
+                sample_images = sample_image[np.newaxis]
+                # # sample_label = sample_label[np.newaxis]
+                # print("herh", sample_image.shape)
 
-        # choose the background
-        source_image = images_np[img_index]
-        source_label = labels_np[img_index]
-        source_locations = all_pixel_locations[img_index]
-
-        # choose the specific image
-        random_index = random.randint(0, source_image.shape[0] - 1)
-        sample_image = source_image[random_index, :, :, :]
-        sample_label = source_label[random_index, :, :, 0]
-        sample_locations = source_locations[random_index, :, :]
-
-        # crop to include the 'skeeter
-        mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
-        (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
-
-        # randomly choose an area
-        sample_images[i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
-        label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
-        sample_labels[i, :, :, 0][label_crop == 0] = 1
-        sample_labels[i, :, :, 1][label_crop == 1] = 1
-
-    return sample_images, sample_labels
+                predictions, logits = sess.run([pred_annotation, logits], feed_dict={image: sample_images, keep_probability: 0.85})
+                print(predictions[0].shape, logits[0].shape)
+                boxes = generate_object_detections(predictions, perc_thresh=0.6)
+                print(boxes)
+                closest_distances = closest_mosquito(boxes[0], sample_locations)
+                print(closest_distances)
+            # boxes = utils.non_max_suppression_fast(boxes, 0.5)
+            # print(boxes, real_locations[0].shape, len(real_locations))
+            # for i in range(len(boxes)):
+            #     print(boxes[i], sample_skeeters[i, :, :])
 
 
-def get_multi_frame_samples(num_images, images_np, labels_np, all_pixel_locations, frame_depth):
-    sample_images = np.zeros((FLAGS.batch_size, frame_depth, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
-    sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
-    
-    # choose the examples
-    for i in range(FLAGS.batch_size):
-        img_index = random.randint(0, num_images - 1)
+def generate_object_detections(predictions, perc_thresh=0.6):
+    all_boxes = []
 
-        # choose the background
-        source_image = images_np[img_index]
-        source_label = labels_np[img_index]
-        source_locations = all_pixel_locations[img_index]
+    for index in range(predictions.shape[0]):
+        prediction = predictions[index, :, :, :]
+        boxes = np.zeros([1, 4])
+        did_any_meet_thresh = True
+        width, height = prediction.shape[0], prediction.shape[1]
+        window_size = 1
+        while window_size < min(prediction.shape[0], prediction.shape[1]) and did_any_meet_thresh:
+            did_any_meet_thresh = False
+            for i in range(0, width - window_size):
+                for j in range(0, height - window_size):
+                    box = prediction[i: i + window_size, j: j + window_size]
+                    # print(box.shape, window_size ** 2, np.sum(box))
+                    if (np.sum(box) / (window_size ** 2)) >= perc_thresh:
+                        did_any_meet_thresh = True
+                        boxes = np.vstack((boxes, [i, j, i + window_size, j + window_size]))
+            window_size += 1
 
-        # choose the specific image that's at least frame_depth back from the end
-        random_index = random.randint(0, source_image.shape[0] - 1 - frame_depth)
-        for frame_i in range(frame_depth):
-            sample_image = source_image[random_index + frame_i, :, :, :]
-            sample_locations = source_locations[random_index + frame_i, :, :]
+        boxes_after_suppression = utils.non_max_suppression_fast(boxes[1:, :], 0.25)
+        all_boxes.append(boxes_after_suppression)
 
-            # crop to include the 'skeeter
-            mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
-            (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
-            sample_images[i, frame_i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
+    return all_boxes
 
-        # get the last frame
-        sample_label = source_label[random_index + frame_depth, :, :, 0]
-        label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
-        sample_labels[i, :, :, 0][label_crop == 0] = 1
-        sample_labels[i, :, :, 1][label_crop == 1] = 1
 
-    return sample_images, sample_labels
+def closest_mosquito(boxes, real_location):
+    closest_dist = []
+    for i in range(boxes.shape[0]):
+        box = boxes[i, :]
+        center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
+        min_dist = sys.maxsize
+        for j in range(real_location.shape[0]):
+            skeeter = real_location[j, :]
+            dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
+            if dist < min_dist:
+                min_dist = dist
+        closest_dist.append(min_dist)
+    return closest_dist
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Takes in the number of background images and architecture style')
-    parser.add_argument('--num_images', help='number of backgroudn images')
+    parser.add_argument('--train_num_images', help='number of backgroudn images')
+    parser.add_argument('--test_num_images', help='number of backgroudn images')
     parser.add_argument('--arch', help='either single frame or multi frame')
     parser.add_argument('--model_name', help='name of the model')
+    parser.add_argument('--train', help='boolean of whether we are training')
     args = parser.parse_args()
-    if args.arch and args.num_images and args.model_name:
+    if args.arch and args.model_name:
         if args.arch != "single" and args.arch != "multi":
             print("Please pass in either single or multi as the architecture type")
-        elif int(args.num_images) > 50:
-            print("We only got fifty images fam")
+        elif args.train_num_images and int(args.train_num_images) > 70:
+            print("We only got so many training images fam")
         else:
-            train(int(args.num_images), args.arch, args.model_name)
+            # load images
+            train_num_images, test_num_images = int(args.train_num_images), int(args.test_num_images)
+            train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
+            test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)
+            
+            print("Images loaded")
+            # build the net
+            if args.train == "True":
+                train(train_images, train_labels, train_pixel_locations, args.arch, train_num_images, args.model_name)
+            print(test_pixel_locations[0].shape, "wuttttt")
+            evaluate(args.arch, args.model_name, test_images, test_labels, test_pixel_locations)
     else:
         print("boy, you missing either the number of background images, architecture type, or name of the model to be saved with. Fix ya yourself")
 
