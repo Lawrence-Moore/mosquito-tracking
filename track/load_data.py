@@ -12,14 +12,24 @@ def load_single_frame(start, num_images):
     all_images = []
     all_labels = []
     all_pixel_locations = []
-    for i in range(start, start + num_images):
-        i += 1
+
+    if num_images == 1:
+        i = start + 1
         video_name = "../data/video%d.avi" % i
         mat_name = "../data/locations%d.mat" % i
         pixel_location_name = "../data/pixel_locations%d.mat" % i
-        all_labels.append(read_heatmap(mat_name))
-        all_images.append(convert_video_to_numpy_array(video_name))
-        all_pixel_locations.append(read_locations(pixel_location_name))
+        all_labels = read_heatmap(mat_name)
+        all_images = convert_video_to_numpy_array(video_name)
+        all_pixel_locations = read_locations(pixel_location_name)
+    else:
+        for i in range(start, start + num_images):
+            i += 1
+            video_name = "../data/video%d.avi" % i
+            mat_name = "../data/locations%d.mat" % i
+            pixel_location_name = "../data/pixel_locations%d.mat" % i
+            all_labels.append(read_heatmap(mat_name))
+            all_images.append(convert_video_to_numpy_array(video_name))
+            all_pixel_locations.append(read_locations(pixel_location_name))
 
         current_time = time.localtime()
         # print(i, time.strftime('%a, %d %b %Y %H:%M:%S GMT', current_time))

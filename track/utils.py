@@ -140,12 +140,12 @@ def get_single_frame_samples(num_images_range):
     # choose the examples
     img_index = random.randint(num_images_range[0], num_images_range[1])
 
-    all_images, all_labels, all_pixel_locations = load_single_frame(img_index , 1)
+    source_image, source_label, source_locations = load_single_frame(img_index , 1)
 
     # choose the background
-    source_image = all_images[0]
-    source_label = all_labels[0]
-    source_locations = all_pixel_locations[0]
+    # source_image = all_images[0]
+    # source_label = all_labels[0]
+    # source_locations = all_pixel_locations[0]
 
     for i in range(FLAGS.batch_size):
 
@@ -167,6 +167,38 @@ def get_single_frame_samples(num_images_range):
         sample_skeeters[i, :, :] = mosquito - np.array([x_min, y_min])
 
     return sample_images, sample_labels, sample_skeeters
+
+def get_single_frame_test_images(num_per_image, num_images_range, img_size=512):
+    num_images = num_images_range[1] - num_images_range[0]
+    sample_images = np.zeros((num_per_image * num_images, img_size, img_size, 3))
+    sample_pixel_locations = []
+    # choose the examples
+    for i, j in zip(range(num_images_range[0], num_images_range[1]), range(num_images)):
+
+        # choose the background
+        images, labels, pixel_locations = load_single_frame(i , 1)
+        random_indices = np.random.choice(images.shape[0], num_per_image)
+        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images[random_indices, :, :, :]
+        for index in random_indices:
+            sample_pixel_locations.append(pixel_locations[index, :, :])
+
+    return sample_images, sample_pixel_locations
+
+def get_multi_frame_test_images(num_per_image, num_images_range, frame_depth, img_size=512):
+    num_images = num_images_range[1] - num_images_range[0]
+    sample_images = np.zeros((num_per_image * num_images, frame_depth, img_size, img_size, 3))
+    sample_pixel_locations = []
+    # choose the examples
+    for i, j in zip(range(num_images_range[0], num_images_range[1]), range(num_images)):
+
+        # choose the background
+        images, labels, pixel_locations = load_single_frame(i , 1)
+        random_indices = np.random.choice(images.shape[0] - frame_depth, num_per_image)
+        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images[random_indices, :, :, :]
+        for index in random_indices:
+            sample_pixel_locations.append(pixel_locations[index, :, :])
+
+    return sample_images, sample_pixel_locations
 
 
 def get_multi_frame_samples(num_images_range, frame_depth):

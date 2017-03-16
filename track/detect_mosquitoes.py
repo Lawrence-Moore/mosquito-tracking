@@ -13,6 +13,7 @@ import multi_frame_network
 from PIL import Image
 import argparse
 import utils
+import matplotlib.pyplot as plt
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -70,6 +71,7 @@ def train(num_image_range, net_type, model_name):
         saver = tf.train.Saver(tf.global_variables())
 
         # Build the summary operation based on the TF collection of Summaries.
+        tf.summary.scalar("yo", tf.constant(5))
         summary_op = tf.summary.merge_all()
 
         # Build an initialization operation to run below.
@@ -82,7 +84,6 @@ def train(num_image_range, net_type, model_name):
 
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
-
         summary_writer = tf.summary.FileWriter(FLAGS.logs_dir, sess.graph)
 
         print("create the summar writter and begin training")
@@ -113,10 +114,6 @@ def train(num_image_range, net_type, model_name):
                 print(format_str % (datetime.now(), step, loss_value,
                                      examples_per_sec, sec_per_batch))
 
-                if step % 100 == 0:
-                    summary_str = sess.run(summary_op, feed_dict={image: sample_images, label: sample_labels, keep_probability: 0.85})
-                    summary_writer.add_summary(summary_str, step)
-
                 # Save the model checkpoint periodically.
                 if step == 10 or step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
                     checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
@@ -124,42 +121,62 @@ def train(num_image_range, net_type, model_name):
 
 
 def evaluate(net_type, model_name, num_images_range):
+    # FLAGS.batch_size = 10
     with tf.Graph().as_default():
 
         with tf.Session() as sess:
-            sess.run(tf.initialize_all_variables())
-            for background_image, background_locations in zip(test_images, real_locations):
-                # tf.reset_default_graph()
-            # sample_images, sample_labels, sample_skeeters = utils.get_single_frame_samples(test_images, test_labels,
-            #                                                                                real_locations)
-            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
-            #                                                                                     sample_images[0].shape)
-                random_index = random.randint(0, background_image.shape[0] - 1)
-                sample_image = background_image[random_index, :, :, :]
-                sample_locations = background_locations[random_index, :, :]
+            sample_images, sample_locations = utils.get_single_frame_test_images(1, num_images_range)
+            image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
+                                                                                                sample_images[0].shape)
+            # random_index = random.randint(0, background_image.shape[0] - 1)
+            # sample_image = background_image[random_index, :, :, :]
+            # sample_locations = background_locations[random_index, :, :]
+            #
+            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_image.shape)
+            saver = tf.train.Saver(tf.global_variables())
 
-                image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_image.shape)
-                saver = tf.train.Saver(tf.global_variables())
+            checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
+            saver.restore(sess, checkpoint_path)
 
-                checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
-                saver.restore(sess, checkpoint_path)
+            # try something from each image
+            # sample_images = sample_image[np.newaxis]
+            # # sample_label = sample_label[np.newaxis]
+            # print("herh", sample_image.shape)
 
-                # try something from each image
-                sample_images = sample_image[np.newaxis]
-                # # sample_label = sample_label[np.newaxis]
-                # print("herh", sample_image.shape)
+            predictions, logits = sess.run([pred_annotation, logits], feed_dict={image: sample_images, keep_probability: 0.85})
+            np.save("predictions", predictions)
+            np.save("logits", logits)
+            np.save("sample_locations", sample_locations)
 
-                predictions, logits = sess.run([pred_annotation, logits], feed_dict={image: sample_images, keep_probability: 0.85})
-                print(predictions[0].shape, logits[0].shape)
-                boxes = generate_object_detections(predictions, perc_thresh=0.6)
-                print(boxes)
-                closest_distances = closest_mosquito(boxes[0], sample_locations)
-                print(closest_distances)
+            all_boxes = generate_object_detections(predictions, perc_thresh=0.6)
+            print(len(all_boxes), all_boxes[0].shape)
+            sorted_boxes, sorted_confidences = sort_detections_by_confidence(all_boxes, logits)
+            list_all_true_positives = find_true_positives(sorted_boxes, sample_locations, dist_cutoff=10)
+
+            all_true_positives = sort_and_combine_true_positives(sorted_confidences, list_all_true_positives)
+            all_false_positives = np.ones(all_true_positives.shape())
+            all_false_positives[all_true_positives > 0] = 0
+
+            plot_precision_recall(all_false_positives, all_true_positives)
             # boxes = utils.non_max_suppression_fast(boxes, 0.5)
             # print(boxes, real_locations[0].shape, len(real_locations))
             # for i in range(len(boxes)):
             #     print(boxes[i], sample_skeeters[i, :, :])
 
+def plot_precision_recall(all_false_positives, all_true_positives):
+    plt.xlabel('Recall')
+    plt.ylablel('Precision')
+    plt.title('Precision Recall Curve')
+    plt.axis([0, 1, 0, 1])
+    p_axis, r_axis = np.cumsum(all_true_positives), np.cumsum(all_false_positives)
+    plt.plot(p_axis, r_axis, 'k-')
+    plt.show
+
+def sort_and_combine_true_positives(sorted_confidences, list_all_true_positives):
+    all_confidences, all_results = np.concatenate(sorted_confidences), np.concatenate(list_all_true_positives)
+
+    sorted_order = all_confidences.argsort()[::-1]
+    return all_results[sorted_order]
 
 def generate_object_detections(predictions, perc_thresh=0.6):
     all_boxes = []
@@ -187,19 +204,41 @@ def generate_object_detections(predictions, perc_thresh=0.6):
     return all_boxes
 
 
-def closest_mosquito(boxes, real_location):
-    closest_dist = []
-    for i in range(boxes.shape[0]):
-        box = boxes[i, :]
-        center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
-        min_dist = sys.maxsize
-        for j in range(real_location.shape[0]):
-            skeeter = real_location[j, :]
-            dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
-            if dist < min_dist:
-                min_dist = dist
-        closest_dist.append(min_dist)
-    return closest_dist
+def find_true_positives(all_boxes, real_locations, dist_cutoff):
+    all_true_positives = []
+    # iterate through each sample
+    for k, image_boxes in enumerate(all_boxes):
+        real_location = real_locations[k, :, :]
+        box_true_positives = np.zeros(image_boxes.shape[0])
+        # iterate through each box in a sample
+        for i in range(image_boxes.shape[0]):
+            box = image_boxes[i, :]
+            center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
+            min_dist = sys.maxsize
+            for j in range(real_location.shape[0]):
+                skeeter = real_location[j, :]
+                dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
+                if dist < min_dist:
+                    min_dist = dist
+            print(min_dist)
+            box_true_positives[i] = min_dist < dist_cutoff
+        all_true_positives.append(box_true_positives)
+    return all_true_positives
+
+def sort_detections_by_confidence(all_boxes, logits):
+    sorted_confidences = []
+    sorted_boxes = []
+    for img_index, boxes in enumerate(all_boxes):
+        print(boxes.shape)
+        confidences = np.ones(boxes.shape[0])
+        for i in range(boxes.shape[0]):
+            box = boxes[i, :]
+            confidences[i] = np.mean(logits[img_index, box[0]: box[2], box[1]: box[3], 1])
+        sorted_order = confidences.argsort()[::-1]
+        sorted_boxes.append(boxes[sorted_order, :])
+        sorted_confidences.append(confidences[sorted_order])
+
+    return sorted_boxes, sorted_confidences
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Takes in the number of background images and architecture style')
@@ -218,7 +257,9 @@ def main(argv=None):
             # load images
             train_num_images, test_num_images = int(args.train_num_images), int(args.test_num_images)
             train_num_images_range = (0, train_num_images - 1)
-            test_num_images_range = (70, test_num_images + 70 - 1)
+
+            test_index_start = 8
+            test_num_images_range = (test_index_start, test_index_start + test_num_images)
             # train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
             # test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)
             
