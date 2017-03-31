@@ -35,17 +35,6 @@ def load_single_frame(start, num_images):
         # print(i, time.strftime('%a, %d %b %Y %H:%M:%S GMT', current_time))
     return all_images, all_labels, all_pixel_locations
 
-def load_multi_frame(frame_size):
-    labels = read_mat(locations)
-    images = convert_video_to_numpy_array(videoName)
-
-    multiframe_labels = np.zeros([labels.shape[0] - frame_size, frame_size, labels.shape[1], labels.shape[2], labels.shape[3]])
-    multiframe_images = np.zeros([images.shape[0] - frame_size, frame_size, images.shape[1], images.shape[2], images.shape[3]])
-    for index in range(0, labels.shape[0] - frame_size):
-        multiframe_labels[index, :, :, :] = labels[index:index + frame_size, :, :, :]
-        multiframe_images[index, :, :, :] = images[index:index + frame_size, :, :, :]
-    return multiframe_images, multiframe_labels
-
 
 def convert_video_to_numpy_array(name):
     # vid = imageio.get_reader(name)

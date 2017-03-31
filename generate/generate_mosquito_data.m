@@ -34,10 +34,11 @@ writerObj.FrameRate = framerate;
  
  % initialize the mosquito positions
  for i=1:numMos
-    positions(i, :) = round(rand([1,2]) .* [size(img, 1), size(img, 2)]);
+    bounds = [size(img, 2), size(img, 1)] - [radii(i), radii(i)];
+    positions(i, :) = round(rand([1,2]) .* bounds) + [radii(i), radii(i)];
     newPosition = positions(i, :);
     imageSize = size(img);
-    if (newPosition(1) > imageSize(1) || newPosition(2) > imageSize(2))
+    if (newPosition(1) > imageSize(2) || newPosition(2) > imageSize(1))
         'yo'
     end
     trajs(i, :) = rand([1,2]);
@@ -45,7 +46,7 @@ writerObj.FrameRate = framerate;
  grids = [];
  % write the frames to the video
  for i = 1: frames_per_movement: (num_seconds * framerate)
-     [positions, trajs] = generateMovement(positions, trajs, moveSizes, size(img));
+     [positions, trajs] = generateMovement(positions, trajs, moveSizes, size(img), radii);
      [grid, blendedImage] = insertMosquito(img, positions, radii);
      % convert the image to a frame
      frame = im2frame(blendedImage);

@@ -15,7 +15,7 @@ function [grid, blendedImage] = insertMosquito(image, positions, radii)
 %         blendedImage = blendedImage .* uint8(repmat(~mosquito, [1,1,3]));
         grid(mosquito) = 1;
     end
-    blendedImage = imnoise(blendedImage, 'gaussian', 0, 0.0001);
+    blendedImage = imnoise(blendedImage, 'gaussian', 0, 0.00005);
     
     grid = cat(3, grid, grid, grid); 
 end

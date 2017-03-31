@@ -1,4 +1,4 @@
-num_images = 80;
+num_images = 91;
 start = 1;
 for i = start: start + num_images - 1
    img_name = strcat(strcat('../data/image', num2str(i)), '.jpg');

@@ -1,4 +1,4 @@
-function [newPositions, newTrajs] = generateMovement(oldPositions, oldTrajs, moveSizes, imageSize)
+function [newPositions, newTrajs] = generateMovement(oldPositions, oldTrajs, moveSizes, imageSize, radii)
 
 newPositions = zeros(size(oldPositions));
 newTrajs = zeros(size(oldTrajs));
@@ -35,15 +35,15 @@ for i=1:size(oldTrajs, 1)
 
     % check bounds. if out, reverse direction
     newPosition = round(oldPosition  + newTraj);
-    if (newPosition(1) > imageSize(1) || newPosition(1) < 0)
+    if (newPosition(1) + radii(i) > imageSize(2) || newPosition(1)-radii(i)< 0)
         newTraj(1) = -1 * newTraj(1);
     end
-    if (newPosition(2) > imageSize(2) || newPosition(2) < 0)
+    if (newPosition(2) + radii(i) > imageSize(1) || newPosition(2)-radii(i)< 0)
         newTraj(2) = -1 * newTraj(2);
     end
 
     % update the new position if necessary
-    newPosition = round(oldPosition  + newTraj);
+    newPosition = floor(oldPosition  + newTraj);
     
     newPositions(i, :) = newPosition;
     newTrajs(i, :) = newTraj;

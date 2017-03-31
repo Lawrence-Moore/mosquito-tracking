@@ -125,7 +125,7 @@ def get_crop(location, crop_size, img_size):
         # else:
         #     min_point = max(random.randint(point + wiggle_room - crop_size, point - wiggle_room), 0)
         if max_point < min_point:
-            print(point, image_max_size)
+            print(point, img_size)
             max_point = min_point
         return random.randint(min_point, max_point)
     # if (location[0] >= img_size[0] or location[1] >= img_size[1]):
@@ -156,7 +156,7 @@ def get_single_frame_samples(num_images_range):
         sample_locations = source_locations[random_index, :, :]
 
         # crop to include the 'skeeter
-        mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
+        mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :][::-1]
         (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
 
         # randomly choose an area
@@ -207,12 +207,12 @@ def get_multi_frame_samples(num_images_range, frame_depth):
 
     img_index = random.randint(num_images_range[0], num_images_range[1])
 
-    all_images, all_labels, all_pixel_locations = load_single_frame(img_index , 1)
+    source_image, source_label, source_locations = load_single_frame(img_index , 1)
 
     # choose the background
-    source_image = all_images[0]
-    source_label = all_labels[0]
-    source_locations = all_pixel_locations[0]
+    # source_image = all_images[0, :, :, :]
+    # source_label = all_labels[0, :, :, :]
+    # source_locations = all_pixel_locations[0]
 
     # choose the examples
     for i in range(FLAGS.batch_size):
@@ -224,7 +224,7 @@ def get_multi_frame_samples(num_images_range, frame_depth):
             sample_locations = source_locations[random_index + frame_i, :, :]
 
             # crop to include the 'skeeter
-            mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
+            mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :][::-1]
             (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
             sample_images[i, frame_i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
 
