@@ -142,11 +142,6 @@ def get_single_frame_samples(num_images_range):
 
     source_image, source_label, source_locations = load_single_frame(img_index , 1)
 
-    # choose the background
-    # source_image = all_images[0]
-    # source_label = all_labels[0]
-    # source_locations = all_pixel_locations[0]
-
     for i in range(FLAGS.batch_size):
 
         # choose the specific image
@@ -168,8 +163,9 @@ def get_single_frame_samples(num_images_range):
 
     return sample_images, sample_labels, sample_skeeters
 
-def get_single_frame_test_images(num_per_image, num_images_range, img_size=512):
+def get_single_frame_test_images(num_images_range, img_size=512):
     num_images = num_images_range[1] - num_images_range[0]
+    num_per_image = 201
     sample_images = np.zeros((num_per_image * num_images, img_size, img_size, 3))
     sample_pixel_locations = []
     # choose the examples
@@ -177,15 +173,14 @@ def get_single_frame_test_images(num_per_image, num_images_range, img_size=512):
 
         # choose the background
         images, labels, pixel_locations = load_single_frame(i , 1)
-        random_indices = np.random.choice(images.shape[0], num_per_image)
-        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images[random_indices, :, :, :]
-        for index in random_indices:
-            sample_pixel_locations.append(pixel_locations[index, :, :])
+        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images
+        sample_pixel_locations.append(pixel_locations)
 
     return sample_images, sample_pixel_locations
 
-def get_multi_frame_test_images(num_per_image, num_images_range, frame_depth, img_size=512):
+def get_multi_frame_test_images(num_images_range, frame_depth, img_size=512):
     num_images = num_images_range[1] - num_images_range[0]
+    num_per_image = 201 - frame_depth
     sample_images = np.zeros((num_per_image * num_images, frame_depth, img_size, img_size, 3))
     sample_pixel_locations = []
     # choose the examples
@@ -193,10 +188,9 @@ def get_multi_frame_test_images(num_per_image, num_images_range, frame_depth, im
 
         # choose the background
         images, labels, pixel_locations = load_single_frame(i , 1)
-        random_indices = np.random.choice(images.shape[0] - frame_depth, num_per_image)
-        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images[random_indices, :, :, :]
-        for index in random_indices:
-            sample_pixel_locations.append(pixel_locations[index, :, :])
+        for k in range(num_per_image):
+            sample_images[j * num_per_image + k, :, :, :] = images[k:k+frame_depth, :, :, :]
+            sample_pixel_locations.append(pixel_locations[k+frame_depth, :, :])
 
     return sample_images, sample_pixel_locations
 
@@ -235,6 +229,16 @@ def get_multi_frame_samples(num_images_range, frame_depth):
         sample_labels[i, :, :, 1][label_crop == 1] = 1
 
     return sample_images, sample_labels
+
+def batch_norm_conv(name, input, kernel_size, num_output_layers, phase):
+    with tf.variable_scope(name):
+        h1 = tf.contrib.layers.conv2d(input, num_output_layers, kernel_size, stride=1, activation_fn=None, scope='conv')
+        h2 = tf.contrib.layers.batch_norm(h1, center=True, scale=True, is_training=phase, scope='bn')
+        return tf.nn.relu(h2)
+        # print([kernel_size[0], kernel_size[1], input.get_shape()[3].value, num_output_layers])
+        # W = weight_variable([kernel_size[0], kernel_size[1], input.get_shape()[3].value, num_output_layers], name="W")
+        # b = bias_variable([num_output_layers], name="b")
+        # return tf.nn.relu(conv2d_basic(input, W, b))
 
 
 def get_variable(weights, name):

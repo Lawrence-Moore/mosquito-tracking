@@ -14,6 +14,7 @@ from PIL import Image
 import argparse
 import utils
 import matplotlib.pyplot as plt
+import compact_net
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -28,7 +29,7 @@ def build_net(net_type, image_shape, train=False):
         # Build a Graph that computes the logits predictions from the
         # inference model.
         keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-        pred_annotation, logits = vgg_single_frame.inference(image, keep_probability, train=train)
+        pred_annotation, logits = compact_net.single_frame_inference(image, keep_probability, train=train)
 
         tf.summary.image("input_image", image)
         tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
@@ -48,14 +49,14 @@ def build_net(net_type, image_shape, train=False):
         # Build a Graph that computes the logits predictions from the
         # inference model.
         keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-        pred_annotation, logits = vgg_multi_frame.inference(image, keep_probability, FLAGS.frame_depth)
+        pred_annotation, logits = compact_net.multi_frame_inference(image, FLAGS.frame_depth)
 
         tf.summary.image("input_image", tf.squeeze(tf.split(1, FLAGS.frame_depth, image)[FLAGS.frame_depth - 1], squeeze_dims=1))
         tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
         tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
 
         # Calculate loss.
-        loss = vgg_multi_frame.loss(logits, label, 500)
+        loss = vgg_multi_frame.loss(logits, label, 1000)
 
         # Build a Graph that trains the model with one batch of examples and
         # updates the model parameters.
@@ -71,7 +72,6 @@ def train(num_image_range, net_type, model_name):
         saver = tf.train.Saver(tf.global_variables())
 
         # Build the summary operation based on the TF collection of Summaries.
-        tf.summary.scalar("yo", tf.constant(5))
         summary_op = tf.summary.merge_all()
 
         # Build an initialization operation to run below.
@@ -130,17 +130,16 @@ def evaluate(net_type, model_name, num_images_range):
     with tf.Graph().as_default():
 
         with tf.Session() as sess:
-            sample_images, sample_locations = utils.get_single_frame_test_images(1, num_images_range)
-            image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
-                                                                                                sample_images[0].shape)
-            # random_index = random.randint(0, background_image.shape[0] - 1)
-            # sample_image = background_image[random_index, :, :, :]
-            # sample_locations = background_locations[random_index, :, :]
-            #
-            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_image.shape)
-            saver = tf.train.Saver(tf.global_variables())
+            sample_images, sample_locations = utils.get_single_frame_test_images(num_images_range)
+            image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_images[0].shape)
 
-            checkpoint_path = os.path.join(FLAGS.logs_dir, '%s.ckpt' % model_name)
+            # image_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
+            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, image_shape, train=True)
+            # num_image_range = (80, 81)
+            # sample_images, sample_labels, sample_locations = utils.get_single_frame_samples(num_image_range)
+
+            saver = tf.train.Saver(tf.global_variables())
+            checkpoint_path = os.path.join(FLAGS.logs_dir, '%s/%s.ckpt' % (model_name, model_name))
             saver.restore(sess, checkpoint_path)
 
             # try something from each image
@@ -148,18 +147,20 @@ def evaluate(net_type, model_name, num_images_range):
             # # sample_label = sample_label[np.newaxis]
             # print("herh", sample_image.shape)
 
+            print("Evaluating")
+
             predictions, logits = sess.run([pred_annotation, logits], feed_dict={image: sample_images, keep_probability: 0.85})
+            np.save("sample_images", sample_images)
             np.save("predictions", predictions)
             np.save("logits", logits)
             np.save("sample_locations", sample_locations)
 
             all_boxes = generate_object_detections(predictions, perc_thresh=0.6)
-            print(len(all_boxes), all_boxes[0].shape)
             sorted_boxes, sorted_confidences = sort_detections_by_confidence(all_boxes, logits)
             list_all_true_positives = find_true_positives(sorted_boxes, sample_locations, dist_cutoff=10)
 
             all_true_positives = sort_and_combine_true_positives(sorted_confidences, list_all_true_positives)
-            all_false_positives = np.ones(all_true_positives.shape())
+            all_false_positives = np.ones(all_true_positives.shape)
             all_false_positives[all_true_positives > 0] = 0
 
             plot_precision_recall(all_false_positives, all_true_positives)
@@ -170,12 +171,14 @@ def evaluate(net_type, model_name, num_images_range):
 
 def plot_precision_recall(all_false_positives, all_true_positives):
     plt.xlabel('Recall')
-    plt.ylablel('Precision')
+    plt.ylabel('Precision')
     plt.title('Precision Recall Curve')
-    plt.axis([0, 1, 0, 1])
-    p_axis, r_axis = np.cumsum(all_true_positives), np.cumsum(all_false_positives)
-    plt.plot(p_axis, r_axis, 'k-')
-    plt.show
+    plt.axis([0, 1.001, 0, 1.001])
+    tp, fp = np.cumsum(all_true_positives), np.cumsum(all_false_positives)
+    x_axis = (tp + fp) / tp.shape[0]
+    y_axis = tp / (tp + fp)
+    plt.plot(x_axis, y_axis, 'b-', linewidth=3)
+    plt.show()
 
 def sort_and_combine_true_positives(sorted_confidences, list_all_true_positives):
     all_confidences, all_results = np.concatenate(sorted_confidences), np.concatenate(list_all_true_positives)
@@ -191,22 +194,17 @@ def generate_object_detections(predictions, perc_thresh=0.6):
         prediction = predictions[index, :, :, :]
         boxes = np.zeros([1, 4])
 
-        did_any_meet_thresh = True
         width, height = prediction.shape[0], prediction.shape[1]
         window_size = 1
+        max_mosquito_size = 10
         # increase window size; stop
-        stop = False
-        while window_size < min(width, height) and not stop:
-            did_any_meet_thresh = False
+        while window_size < min(width, height, max_mosquito_size):
             for i in range(0, width - window_size):
                 for j in range(0, height - window_size):
                     box = prediction[i: i + window_size, j: j + window_size]
                     # print(box.shape, window_size ** 2, np.sum(box))
                     if (np.sum(box) / (window_size ** 2)) >= perc_thresh:
-                        did_any_meet_thresh = True
                         boxes = np.vstack((boxes, [i, j, i + window_size, j + window_size]))
-                    elif did_any_meet_thresh:
-                        stop = True
             window_size += 1
 
         boxes_after_suppression = utils.non_max_suppression_fast(boxes[1:, :], 0.25)
@@ -219,113 +217,46 @@ def find_true_positives(all_boxes, real_locations, dist_cutoff):
     all_true_positives = []
     # iterate through each sample
     for k, image_boxes in enumerate(all_boxes):
-        real_location = real_locations[k, :, :]
-        box_true_positives = np.zeros(image_boxes.shape[0])
-        # iterate through each box in a sample
-        for i in range(image_boxes.shape[0]):
-            box = image_boxes[i, :]
-            center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
-            min_dist = sys.maxsize
-            for j in range(real_location.shape[0]):
-                skeeter = real_location[j, :]
-                dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
-                if dist < min_dist:
-                    min_dist = dist
-            print(min_dist)
-            box_true_positives[i] = min_dist < dist_cutoff
+        if type(image_boxes) != list:
+            real_location = real_locations[k]
+            print(real_location, real_location.shape)
+            box_true_positives = np.zeros(image_boxes.shape[0])
+            # iterate through each box in a sample
+            for i in range(image_boxes.shape[0]):
+                box = image_boxes[i, :]
+                center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
+                min_dist = sys.maxsize
+                for j in range(real_location.shape[0]):
+                    skeeter = real_location[j, :]
+                    print(skeeter, center)
+                    dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
+                    if dist < min_dist:
+                        min_dist = dist
+                print(min_dist)
+                box_true_positives[i] = min_dist < dist_cutoff
+        else:
+            box_true_positives = np.zeros(1)
         all_true_positives.append(box_true_positives)
     return all_true_positives
 
 def sort_detections_by_confidence(all_boxes, logits):
     sorted_confidences = []
     sorted_boxes = []
-    for img_index, boxes in enumerate(all_boxes):
-        print(boxes.shape)
-        confidences = np.ones(boxes.shape[0])
-        for i in range(boxes.shape[0]):
-            box = boxes[i, :]
-            confidences[i] = np.mean(logits[img_index, box[0]: box[2], box[1]: box[3], 1])
-        sorted_order = confidences.argsort()[::-1]
-        sorted_boxes.append(boxes[sorted_order, :])
-        sorted_confidences.append(confidences[sorted_order])
+    for img_index, _ in enumerate(all_boxes):
+        boxes = all_boxes[img_index]
+        if type(boxes) != list:
+            confidences = np.ones(boxes.shape[0])
+            for i in range(boxes.shape[0]):
+                box = boxes[i, :]
+                confidences[i] = np.mean(logits[img_index, box[0]: box[2], box[1]: box[3], 1])
+            sorted_order = confidences.argsort()[::-1]
+            sorted_boxes.append(boxes[sorted_order, :])
+            sorted_confidences.append(confidences[sorted_order])
+        else:
+            sorted_boxes.append([])
+            sorted_confidences.append(np.array([0]))
 
     return sorted_boxes, sorted_confidences
-
-
-def inference(num_images, net_type):
-    with tf.Graph().as_default():
-        global_step = tf.Variable(0, trainable=False)
-        new_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
-        # images_np, labels_np, all_pixel_locations = load_data.load_single_frame(num_images, new_shape)
-        if net_type == 'single':
-            # Get images and labels for the skeets
-            image = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], new_shape[2]])
-            label = tf.placeholder(tf.float32, shape=[None, new_shape[0], new_shape[1], 2])
-
-            # Build a Graph that computes the logits predictions from the
-            # inference model.
-            keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-            pred_annotation, logits = vgg_single_frame.inference(image, keep_probability)
-
-            tf.summary.image("input_image", image)
-            tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
-            tf.summary.image("pred_annotation", tf.mul(tf.cast(pred_annotation, tf.uint8), 255))
-
-            # Calculate loss.
-            loss = vgg_single_frame.loss(logits, label, 500)
-
-            # Build a Graph that trains the model with one batch of examples and
-            # updates the model parameters.
-            train_op = vgg_single_frame.train(loss, global_step)
-        return train_op, loss
-
-
-def get_crop(location, crop_size, img_size):
-    wiggle_room = 10
-
-    def get_point_within_range(point, image_max_size):
-        max_point = min(point, image_max_size - crop_size)
-        min_point = max(point - crop_size, 0)
-        # if point + crop_size - wiggle_room >= image_max_size:
-        #     min_point = point - crop_size + 1
-        # else:
-        #     min_point = max(random.randint(point + wiggle_room - crop_size, point - wiggle_room), 0)
-        return random.randint(min_point, max_point)
-
-    return get_point_within_range(location[0], img_size[0]), get_point_within_range(location[1], img_size[1])
-
-def get_single_frame_samples(num_images, images_np, labels_np, all_pixel_locations):
-    sample_images = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
-    sample_labels = np.zeros((FLAGS.batch_size, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
-
-    # choose the examples
-    for i in range(FLAGS.batch_size):
-        img_index = random.randint(0, num_images - 1)
-
-        # choose the background
-        source_image = images_np[img_index]
-        source_label = labels_np[img_index]
-        source_locations = all_pixel_locations[img_index]
-
-        # choose the specific image
-        random_index = random.randint(0, source_image.shape[0] - 1)
-        # print(source_image.shape, random_index)
-        sample_image = source_image[random_index, :, :, :]
-        sample_label = source_label[random_index, :, :, 0]
-        sample_locations = source_locations[random_index, :, :]
-
-        # crop to include the 'skeeter
-        mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :]
-        (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
-
-        # randomly choose an area
-        sample_images[i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE,
-                                    y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
-        label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
-        sample_labels[i, :, :, 0][label_crop == 0] = 1
-        sample_labels[i, :, :, 1][label_crop == 1] = 1
-
-    return sample_images, sample_labels
 
 
 def main(argv=None):
@@ -339,24 +270,22 @@ def main(argv=None):
     if args.arch and args.model_name:
         if args.arch != "single" and args.arch != "multi":
             print("Please pass in either single or multi as the architecture type")
-        elif args.train_num_images and int(args.train_num_images) > 70:
+        elif args.train_num_images and int(args.train_num_images) > 80:
             print("We only got so many training images fam")
         else:
             # load images
             train_num_images, test_num_images = int(args.train_num_images), int(args.test_num_images)
             train_num_images_range = (0, train_num_images - 1)
 
-            test_index_start = 8
+            test_index_start = 81
             test_num_images_range = (test_index_start, test_index_start + test_num_images)
             # train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
             # test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)
-            
-            print("Images loaded")
+
             # build the net
             if args.train == "True":
                 train(train_num_images_range, args.arch, args.model_name)
                 # old_train(1, args.arch, args.model_name)
-            # print(test_pixel_locations[0].shape, "wuttttt")
             else:
                 evaluate(args.arch, args.model_name, test_num_images_range)
     else:
