@@ -15,6 +15,8 @@ import argparse
 import utils
 import matplotlib.pyplot as plt
 import compact_net
+from load_data import load_single_frame
+from utils import get_crop
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -42,6 +44,7 @@ def build_net(net_type, image_shape, train=False):
         # updates the model parameters.
         train_op = vgg_single_frame.train(loss, global_step)
     elif net_type == 'multi':
+        print("multi type")
         # Get images and labels for the skeets
         image = tf.placeholder(tf.float32, shape=[None, FLAGS.frame_depth, image_shape[0], image_shape[1], image_shape[2]])
         label = tf.placeholder(tf.float32, shape=[None, image_shape[0], image_shape[1], 2])
@@ -49,7 +52,7 @@ def build_net(net_type, image_shape, train=False):
         # Build a Graph that computes the logits predictions from the
         # inference model.
         keep_probability = tf.placeholder(tf.float32, name="keep_probability")
-        pred_annotation, logits = compact_net.multi_frame_inference(image, FLAGS.frame_depth)
+        pred_annotation, logits = compact_net.multi_frame_inference(image, FLAGS.frame_depth, train=train)
 
         tf.summary.image("input_image", tf.squeeze(tf.split(1, FLAGS.frame_depth, image)[FLAGS.frame_depth - 1], squeeze_dims=1))
         tf.summary.image("ground_truth", tf.mul(tf.cast(tf.split(3, 2, label)[1], tf.uint8), 255))
@@ -128,14 +131,62 @@ def train(num_image_range, net_type, model_name):
 def evaluate(net_type, model_name, num_images_range):
     # FLAGS.batch_size = 10
     with tf.Graph().as_default():
+        print("Bout to starting valuatin and not hatin")
+        config = tf.ConfigProto(log_device_placement=True)
+        config.gpu_options.allow_growth = True
+        with tf.device('/gpu:1'):
+            sample_images, sample_locations = utils.get_multi_frame_test_images(num_images_range, FLAGS.frame_depth,
+                                                                                img_size=256)
+            image_shape = (256, 256, 3)
+            image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
+                                                                                                image_shape,
+                                                                                                train=True)
+        with tf.Session(config=config) as sess:
+            if net_type == 'single':
+                sample_images, sample_locations = utils.get_single_frame_test_images(num_images_range)
+            else:
+                pass
+                # sample_images, sample_locations = utils.get_single_frame_test_images(num_images_range)
+                # with tf.device('/gpu:1'):
+                #     sample_images, sample_locations = utils.get_multi_frame_test_images(num_images_range, FLAGS.frame_depth, img_size=256)
+                #     image_shape = (256, 256, 3)
+                #     image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type,
+                #                                                                                         image_shape,
+                #                                                                                         train=True)
+                # saver = tf.train.Saver(tf.global_variables())
+                # checkpoint_path = os.path.join(FLAGS.logs_dir, '%s/%s.ckpt' % (model_name, model_name))
+                # saver.restore(sess, checkpoint_path)
+                # print("da fuqqqqq")
+            # num = 200
+            # sample_images = np.zeros((num, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3))
+            # sample_labels = np.zeros((num, FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 2))
+            # sample_skeeters = []
+            # source_image, source_label, source_locations = load_single_frame(81, 1)
+            #
+            # for i in range(num):
+            #     random_index = i
+            #     sample_image = source_image[random_index, :, :, :]
+            #     sample_label = source_label[random_index, :, :, 0]
+            #     sample_locations = source_locations[random_index, :, :]
+            #
+            #     # crop to include the 'skeeter
+            #     mosquito = sample_locations[random.randint(0, sample_locations.shape[0] - 1), :][::-1]
+            #     (x_min, y_min) = get_crop(mosquito, FLAGS.TRAIN_IMAGE_SIZE, sample_image.shape[0:2])
+            #
+            #     # randomly choose an area
+            #     sample_images[i, :, :, :] = sample_image[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE,
+            #                                 y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE, :]
+            #     label_crop = sample_label[x_min: x_min + FLAGS.TRAIN_IMAGE_SIZE, y_min: y_min + FLAGS.TRAIN_IMAGE_SIZE]
+            #     sample_labels[i, :, :, 0][label_crop == 0] = 1
+            #     sample_labels[i, :, :, 1][label_crop == 1] = 1
+            #     sample_skeeters.append(mosquito - np.array([x_min, y_min])[None, :])
+            # sample_locations = sample_skeeters
 
-        with tf.Session() as sess:
-            sample_images, sample_locations = utils.get_single_frame_test_images(num_images_range)
-            image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_images[0].shape)
+            # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, sample_images[0, :, :, :].shape, train=True)
 
             # image_shape = (FLAGS.TRAIN_IMAGE_SIZE, FLAGS.TRAIN_IMAGE_SIZE, 3)
             # image, label, keep_probability, logits, train_op, loss, pred_annotation = build_net(net_type, image_shape, train=True)
-            # num_image_range = (80, 81)
+            # num_image_range = (81, 82)
             # sample_images, sample_labels, sample_locations = utils.get_single_frame_samples(num_image_range)
 
             saver = tf.train.Saver(tf.global_variables())
@@ -147,7 +198,7 @@ def evaluate(net_type, model_name, num_images_range):
             # # sample_label = sample_label[np.newaxis]
             # print("herh", sample_image.shape)
 
-            print("Evaluating")
+            print("Evaluating", image.get_shape())
 
             predictions, logits = sess.run([pred_annotation, logits], feed_dict={image: sample_images, keep_probability: 0.85})
             np.save("sample_images", sample_images)
@@ -155,8 +206,13 @@ def evaluate(net_type, model_name, num_images_range):
             np.save("logits", logits)
             np.save("sample_locations", sample_locations)
 
-            all_boxes = generate_object_detections(predictions, perc_thresh=0.6)
+            print("generating object detections")
+
+            all_boxes = generate_object_detections(predictions, perc_thresh=0.8)
+
+            print("sorting detections by confidence")
             sorted_boxes, sorted_confidences = sort_detections_by_confidence(all_boxes, logits)
+            print("Finding true positives")
             list_all_true_positives = find_true_positives(sorted_boxes, sample_locations, dist_cutoff=10)
 
             all_true_positives = sort_and_combine_true_positives(sorted_confidences, list_all_true_positives)
@@ -190,6 +246,7 @@ def generate_object_detections(predictions, perc_thresh=0.6):
     all_boxes = []
 
     for index in range(predictions.shape[0]):
+        print("generating prediction for ", index)
         # go through the different pixel by pixel mosquito predictions generated by the net
         prediction = predictions[index, :, :, :]
         boxes = np.zeros([1, 4])
@@ -207,7 +264,7 @@ def generate_object_detections(predictions, perc_thresh=0.6):
                         boxes = np.vstack((boxes, [i, j, i + window_size, j + window_size]))
             window_size += 1
 
-        boxes_after_suppression = utils.non_max_suppression_fast(boxes[1:, :], 0.25)
+        boxes_after_suppression = utils.non_max_suppression_fast(boxes[1:, :], 0.3)
         all_boxes.append(boxes_after_suppression)
 
     return all_boxes
@@ -219,7 +276,6 @@ def find_true_positives(all_boxes, real_locations, dist_cutoff):
     for k, image_boxes in enumerate(all_boxes):
         if type(image_boxes) != list:
             real_location = real_locations[k]
-            print(real_location, real_location.shape)
             box_true_positives = np.zeros(image_boxes.shape[0])
             # iterate through each box in a sample
             for i in range(image_boxes.shape[0]):
@@ -227,12 +283,12 @@ def find_true_positives(all_boxes, real_locations, dist_cutoff):
                 center = int(box[0] + (box[2] - box[0]) / 2), int(box[1] + (box[3] - box[1]) /2)
                 min_dist = sys.maxsize
                 for j in range(real_location.shape[0]):
-                    skeeter = real_location[j, :]
-                    print(skeeter, center)
+                    skeeter = real_location[j, :][::-1]
+                    # print(skeeter, center)
                     dist = ((skeeter[0] - center[0])**2 + (skeeter[1] - center[1])**2) **(1/2)
                     if dist < min_dist:
                         min_dist = dist
-                print(min_dist)
+                # print(min_dist)
                 box_true_positives[i] = min_dist < dist_cutoff
         else:
             box_true_positives = np.zeros(1)
@@ -277,7 +333,7 @@ def main(argv=None):
             train_num_images, test_num_images = int(args.train_num_images), int(args.test_num_images)
             train_num_images_range = (0, train_num_images - 1)
 
-            test_index_start = 81
+            test_index_start = 92
             test_num_images_range = (test_index_start, test_index_start + test_num_images)
             # train_images, train_labels, train_pixel_locations = load_data.load_single_frame(0, train_num_images)
             # test_images, test_labels, test_pixel_locations = load_data.load_single_frame(70, test_num_images)

@@ -22,6 +22,7 @@ def compact_base(image, phase):
 def single_frame_inference(image, keep_prob, train=False):
     # set phase
     with tf.variable_scope("inference"):
+        print("Single Frame Inference")
         net = compact_base(image, train)
 
         W7 = weight_variable([8, 8, 32, 512], name="W7")
@@ -78,21 +79,23 @@ def multi_frame_inference(image, frame_depth, train=False):
             net = compact_base(image, train)
             frame_intermediates.append(net['layer6_p'])
 
+    print("why, ", net['layer1'])
+
     conv_final_layer = tf.concat(3, frame_intermediates)
 
     with tf.variable_scope("inference"):
 
-        W7 = weight_variable([8, 8, 32 * frame_depth, 512], name="W7")
-        b7 = bias_variable([512], name="b7")
+        W7 = weight_variable([8, 8, 32 * frame_depth, 32], name="W7")
+        b7 = bias_variable([32], name="b7")
         conv7 = conv2d_basic(conv_final_layer, W7, b7)
         relu7 = tf.nn.relu(conv7, name="relu7")
 
-        W8 = weight_variable([1, 1, 512, 512], name="W8")
-        b8 = bias_variable([512], name="b8")
+        W8 = weight_variable([1, 1, 32, 32], name="W8")
+        b8 = bias_variable([32], name="b8")
         conv8 = conv2d_basic(relu7, W8, b8)
         relu8 = tf.nn.relu(conv8, name="relu8")
 
-        W9 = weight_variable([1, 1, 512, FLAGS.NUM_OF_CLASSES], name="W9")
+        W9 = weight_variable([1, 1, 32, FLAGS.NUM_OF_CLASSES], name="W9")
         b9 = bias_variable([FLAGS.NUM_OF_CLASSES], name="b9")
         conv9 = conv2d_basic(relu8, W9, b9)
 

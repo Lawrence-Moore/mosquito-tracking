@@ -165,7 +165,7 @@ def get_single_frame_samples(num_images_range):
 
 def get_single_frame_test_images(num_images_range, img_size=512):
     num_images = num_images_range[1] - num_images_range[0]
-    num_per_image = 201
+    num_per_image = 20
     sample_images = np.zeros((num_per_image * num_images, img_size, img_size, 3))
     sample_pixel_locations = []
     # choose the examples
@@ -173,14 +173,15 @@ def get_single_frame_test_images(num_images_range, img_size=512):
 
         # choose the background
         images, labels, pixel_locations = load_single_frame(i , 1)
-        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images
-        sample_pixel_locations.append(pixel_locations)
+        sample_images[j * num_per_image: num_per_image * (j + 1), :, :, :] = images[0:num_per_image, :, :, :]
+        for k in range(num_per_image):
+            sample_pixel_locations.append(pixel_locations[k, :, :])
 
     return sample_images, sample_pixel_locations
 
 def get_multi_frame_test_images(num_images_range, frame_depth, img_size=512):
     num_images = num_images_range[1] - num_images_range[0]
-    num_per_image = 201 - frame_depth
+    num_per_image = 5
     sample_images = np.zeros((num_per_image * num_images, frame_depth, img_size, img_size, 3))
     sample_pixel_locations = []
     # choose the examples
